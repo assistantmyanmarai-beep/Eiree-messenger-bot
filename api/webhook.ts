@@ -132,7 +132,7 @@ async function updateConversationContext(customerId: number, data: { products_me
   if (existingContext && existingContext.length > 0) {
     await supabaseQuery("conversation_context", "PATCH", { ...data, updated_at: new Date().toISOString() }, `customer_id=eq.${customerId}`);
   } else {
-    await supabaseQuery("conversation_context", "POST", { customer_id: customerId, ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+    await supabaseQuery("conversation_context", "POST", { customer_id: customerId, ...data, updated_at: new Date().toISOString() });
   }
 }
 

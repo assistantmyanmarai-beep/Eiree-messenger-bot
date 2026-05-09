@@ -9,8 +9,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Telegram credentials for SYSTEM ERRORS ONLY
-const TELEGRAM_BOT_TOKEN = "8739448828:AAFHiOlZpAKXrRCGf6hYZ8HcHgq51Ts0gCc";
-const TELEGRAM_CHAT_ID = "8404721344";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // Supabase REST helper
 async function supabaseQuery(table: string, method: string, body?: any, query?: string) {

@@ -1,4 +1,7 @@
 {
+  "version": 2,
+  "buildCommand": null,
+  "installCommand": "pnpm install",
   "rewrites": [
     { "source": "/webhook", "destination": "/api/webhook" }
   ]

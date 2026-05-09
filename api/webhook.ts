@@ -191,15 +191,15 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
     // Get context
     const contextData = await supabaseQuery("conversation_context", "GET", null, `customer_id=eq.${customer.id}&select=*`);
     const context = contextData && contextData.length > 0 ? contextData[0] : null;
-    const preferredAddress = context?.preferences; // We'll use preferences field for "အကို" or "အမ"
+    const preferredAddress = context?.preferences;
 
-    // If it's the first message or we don't know how to address them
+    // First message handling
     if (!preferredAddress && history.length === 0) {
       await updateConversationContext(customer.id, { preferences: "pending" });
       return "မင်္ဂလာပါခင်ဗျာ။ EIREE Water Purifiers က ကြိုဆိုပါတယ်ခင်ဗျာ။ အကို/အမ ဘယ်လိုခေါ်ရမလဲခင်ဗျာ?";
     }
 
-    // If we were waiting for their address preference
+    // Preference detection
     if (context?.preferences === "pending") {
       let detectedAddress = "";
       if (messageText.includes("အကို") || messageText.includes("ကျနော်") || messageText.includes("ကျွန်တော်")) {
@@ -207,7 +207,6 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
       } else if (messageText.includes("အမ") || messageText.includes("ကျမ") || messageText.includes("ကျွန်မ")) {
         detectedAddress = "အမ";
       } else {
-        // Default to asking again or just pick one if they gave a name
         detectedAddress = "အကို/အမ"; 
       }
       await updateConversationContext(customer.id, { preferences: detectedAddress });
@@ -215,11 +214,11 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
 
     const currentAddress = context?.preferences || "အကို/အမ";
 
-    // Product logic: Names only first, then details
+    // Product context
     let productContext = "";
     const productNames = products.map((p: any) => p.name).join(", ");
-    
     const mentionedProduct = products.find(p => messageText.toLowerCase().includes(p.name.toLowerCase()));
+    
     if (mentionedProduct) {
       const stockStatus = mentionedProduct.stock_quantity > 0 
         ? `လက်ရှိ Stock ရှိပါတယ်ခင်ဗျာ။` 
@@ -262,7 +261,10 @@ ${productContext}`;
         max_tokens: 300,
         temperature: 0.7,
       },
-      { headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" } }
+      { 
+        headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+        timeout: 8000 // 8 seconds timeout for AI call to stay within Vercel limits
+      }
     );
 
     const aiReply = response.data.choices[0]?.message?.content || "ခဏလေးစောင့်ပေးပါခင်ဗျာ၊ ကျွန်တော်တို့ team ကနေ ပြန်ဆက်သွယ်ပေးပါမယ်။";
@@ -305,22 +307,9 @@ ${productContext}`;
     
     return aiReply;
   } catch (error: any) {
-    console.error("AI Error:", error.message);
-    await notifyTelegramError(`AI API Error: ${error.message}`);
+    console.error("AI Error:", error.response?.data || error.message);
+    await notifyTelegramError(`AI API Error: ${JSON.stringify(error.response?.data || error.message)}`);
     return "ခဏလေးစောင့်ပေးပါခင်ဗျာ၊ ကျွန်တော်တို့ team ကနေ ပြန်ဆက်သွယ်ပေးပါမယ်။ 🙏";
-  }
-}
-
-// Simple in-memory queue to handle sequential processing per user
-const userQueues: { [key: string]: Promise<void> } = {};
-
-async function processMessage(senderId: string, messageText: string) {
-  try {
-    const reply = await generateAIResponse(senderId, messageText);
-    await sendMessage(senderId, reply);
-  } catch (err) {
-    console.error("Error processing message:", err);
-    await sendMessage(senderId, "ခဏလေးစောင့်ပေးပါခင်ဗျာ၊ ကျွန်တော်တို့ team ကနေ ပြန်ဆက်သွယ်ပေးပါမယ်။ 🙏");
   }
 }
 
@@ -336,33 +325,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "POST") {
     const body = req.body;
     if (body.object === "page") {
-      // Return 200 immediately to Facebook
-      res.status(200).send("EVENT_RECEIVED");
+      // Process messages synchronously within the handler to avoid Vercel background execution issues
+      // We will use Promise.all to handle multiple events in one request but wait for them
+      try {
+        const tasks = [];
+        for (const entry of body.entry || []) {
+          for (const event of entry.messaging || []) {
+            const senderId = event.sender.id;
+            
+            tasks.push((async () => {
+              const customer = await getOrCreateCustomer(senderId);
+              if (customer && customer.bot_paused) return;
 
-      for (const entry of body.entry || []) {
-        for (const event of entry.messaging || []) {
-          const senderId = event.sender.id;
-          
-          // Use a queue to process messages for this user sequentially
-          if (!userQueues[senderId]) {
-            userQueues[senderId] = Promise.resolve();
+              if (event.message && event.message.text) {
+                const reply = await generateAIResponse(senderId, event.message.text);
+                await sendMessage(senderId, reply);
+              } else if (event.message) {
+                const reply = "ခဏလေးစောင့်ပေးပါခင်ဗျာ၊ ကျွန်တော်တို့ team ကနေ ပြန်ဆက်သွယ်ပေးပါမယ်။ 🙏";
+                await sendMessage(senderId, reply);
+                await notifyOwnerDashboard(customer.id, "non_text_message", "Non-text Message", `Customer sent a ${Object.keys(event.message)[0]}`);
+              }
+            })());
           }
-
-          userQueues[senderId] = userQueues[senderId].then(async () => {
-            const customer = await getOrCreateCustomer(senderId);
-            if (customer.bot_paused) return;
-
-            if (event.message && event.message.text) {
-              await processMessage(senderId, event.message.text);
-            } else if (event.message) {
-              const reply = "ခဏလေးစောင့်ပေးပါခင်ဗျာ၊ ကျွန်တော်တို့ team ကနေ ပြန်ဆက်သွယ်ပေးပါမယ်။ 🙏";
-              await sendMessage(senderId, reply);
-              await notifyOwnerDashboard(customer.id, "non_text_message", "Non-text Message", `Customer sent a ${Object.keys(event.message)[0]}`);
-            }
-          });
         }
+        await Promise.all(tasks);
+      } catch (err) {
+        console.error("Handler Error:", err);
       }
-      return;
+      return res.status(200).send("EVENT_RECEIVED");
     }
   }
   return res.status(405).send("Method not allowed");

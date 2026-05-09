@@ -3,6 +3,7 @@
   "buildCommand": null,
   "installCommand": "pnpm install",
   "rewrites": [
-    { "source": "/webhook", "destination": "/api/webhook" }
+    { "source": "/webhook", "destination": "/api/webhook" },
+    { "source": "/privacy", "destination": "/api/privacy" }
   ]
 }

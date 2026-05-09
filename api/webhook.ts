@@ -185,8 +185,35 @@ function extractOrderDetails(message: string, products: any[]) {
 async function generateAIResponse(psid: string, messageText: string): Promise<string> {
   try {
     const customer = await getOrCreateCustomer(psid);
-    const history = await getConversationHistory(customer.id, 8);
+    const history = await getConversationHistory(customer.id, 10);
     const products = await getProducts();
+    
+    // Get context
+    const contextData = await supabaseQuery("conversation_context", "GET", null, `customer_id=eq.${customer.id}&select=*`);
+    const context = contextData && contextData.length > 0 ? contextData[0] : null;
+    const preferredAddress = context?.preferences; // We'll use preferences field for "အကို" or "အမ"
+
+    // If it's the first message or we don't know how to address them
+    if (!preferredAddress && history.length === 0) {
+      await updateConversationContext(customer.id, { preferences: "pending" });
+      return "မင်္ဂလာပါခင်ဗျာ။ EIREE Water Purifiers က ကြိုဆိုပါတယ်ခင်ဗျာ။ အကို/အမ ဘယ်လိုခေါ်ရမလဲခင်ဗျာ?";
+    }
+
+    // If we were waiting for their address preference
+    if (context?.preferences === "pending") {
+      let detectedAddress = "";
+      if (messageText.includes("အကို") || messageText.includes("ကျနော်") || messageText.includes("ကျွန်တော်")) {
+        detectedAddress = "အကို";
+      } else if (messageText.includes("အမ") || messageText.includes("ကျမ") || messageText.includes("ကျွန်မ")) {
+        detectedAddress = "အမ";
+      } else {
+        // Default to asking again or just pick one if they gave a name
+        detectedAddress = "အကို/အမ"; 
+      }
+      await updateConversationContext(customer.id, { preferences: detectedAddress });
+    }
+
+    const currentAddress = context?.preferences || "အကို/အမ";
 
     // Product logic: Names only first, then details
     let productContext = "";
@@ -215,12 +242,12 @@ Stock အခြေအနေ: ${stockStatus}`;
 
 အရောင်းဗျူဟာနှင့် စကားပြောပုံစံ:
 1. သင်သည် စက်ရုပ်မဟုတ်ဘဲ နွေးထွေးပျူငှာသော လူသားတစ်ဦးကဲ့သို့ စကားပြောပါ။
-2. ဖောက်သည်ကို "အကို" သို့မဟုတ် "အမ" ဟု ခေါ်ဝေါ်သုံးစွဲပါ။ (နာမည် သို့မဟုတ် စကားပြောပုံစံအရ ကျား/မ ခွဲခြားပြီး သုံးနှုန်းပါ၊ မသေချာပါက "အကို/အမ" ဟု ယေဘုယျသုံးနိုင်သည်)။
-3. မိမိကိုယ်ကို ရည်ညွှန်းလျှင် "ခင်ဗျာ" ကိုသာ သုံးပါ။ (ယောကျာ်းလေးအသံနေအထား)။ "ရှင့်" လုံးဝမသုံးရပါ။
-4. "ဖောက်သည်" ဟူသော စက်ရုပ်ဆန်သော စကားလုံးကို မသုံးပါနှင့်။ အစားထိုး၍ "အကို/အမ" ဟုသာ သုံးပါ။
-5. အရောင်းပိတ်နိုင်ရန် တက်ကြွစွာ ကြိုးစားပါ။ ပစ္စည်း၏ ကောင်းကွက်များကို ထင်ရှားအောင်ပြောပြပြီး ဝယ်ယူရန် တိုက်တွန်းပါ။
-6. ပစ္စည်းအကြောင်းမေးလျှင် အမည်များကိုသာ အရင်ပြောပြပါ။ စိတ်ဝင်စားမှုရှိမှသာ အသေးစိတ်နှင့် စျေးနှုန်းကို ပြောပြပြီး အရောင်းပိတ်ရန် ကြိုးစားပါ။
-7. ပစ္စည်း Stock မရှိလျှင် Pre-order တင်ရန်နှင့် အကျိုးကျေးဇူးများကို ပြောပြ၍ ဆွဲဆောင်ပါ။
+2. ဖောက်သည်ကို "${currentAddress}" ဟုသာ ခေါ်ဝေါ်သုံးစွဲပါ။
+3. မိမိကိုယ်ကို ရည်ညွှန်းလျှင် "ခင်ဗျာ" ကိုသာ သုံးပါ။ "ရှင့်" လုံးဝမသုံးရပါ။
+4. စကားပြောလျှင် တိုတိုနှင့် လိုရင်းကိုသာ ပြောပါ။ တစ်ခါပြန်လျှင် စာကြောင်း ၂ ကြောင်း သို့မဟုတ် ၃ ကြောင်းထက် ပိုမရှည်ပါစေနှင့်။
+5. Bullet points များ၊ စာရှည်ကြီးများကို ရှောင်ပါ။ သူငယ်ချင်းချင်း chat သကဲ့သို့ သဘာဝကျကျ ပြောပါ။
+6. အရောင်းပိတ်နိုင်ရန် တက်ကြွစွာ ကြိုးစားပါ။ ပစ္စည်း၏ ကောင်းကွက်များကို ထင်ရှားအောင်ပြောပြပြီး ဝယ်ယူရန် တိုက်တွန်းပါ။
+7. ပစ္စည်းအကြောင်းမေးလျှင် အမည်များကိုသာ အရင်ပြောပြပါ။ စိတ်ဝင်စားမှုရှိမှသာ အသေးစိတ်နှင့် စျေးနှုန်းကို ပြောပြပါ။
 8. အော်ဒါတင်လိုပါက နာမည်၊ ဖုန်း၊ လိပ်စာ၊ ပစ္စည်းအမည်၊ အရေအတွက်တို့ကို တောင်းခံပါ။
 9. သင်ကိုယ်တိုင် မသေချာသော မေးခွန်းများ၊ အသံဖိုင်များ၊ သို့မဟုတ် နားမလည်သော အကြောင်းအရာများဖြစ်ပါက "ခဏလေးစောင့်ပေးပါခင်ဗျာ၊ ကျွန်တော်တို့ team ကနေ ပြန်ဆက်သွယ်ပေးပါမယ်" ဟုသာ ဖြေပါ။
 
@@ -232,7 +259,7 @@ ${productContext}`;
       {
         model: "google/gemini-2.5-flash",
         messages: [{ role: "system", content: systemPrompt }, ...historyMessages, { role: "user", content: messageText }],
-        max_tokens: 500,
+        max_tokens: 300,
         temperature: 0.7,
       },
       { headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" } }
@@ -284,6 +311,19 @@ ${productContext}`;
   }
 }
 
+// Simple in-memory queue to handle sequential processing per user
+const userQueues: { [key: string]: Promise<void> } = {};
+
+async function processMessage(senderId: string, messageText: string) {
+  try {
+    const reply = await generateAIResponse(senderId, messageText);
+    await sendMessage(senderId, reply);
+  } catch (err) {
+    console.error("Error processing message:", err);
+    await sendMessage(senderId, "ခဏလေးစောင့်ပေးပါခင်ဗျာ၊ ကျွန်တော်တို့ team ကနေ ပြန်ဆက်သွယ်ပေးပါမယ်။ 🙏");
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "GET") {
     const mode = req.query["hub.mode"];
@@ -296,26 +336,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "POST") {
     const body = req.body;
     if (body.object === "page") {
+      // Return 200 immediately to Facebook
+      res.status(200).send("EVENT_RECEIVED");
+
       for (const entry of body.entry || []) {
         for (const event of entry.messaging || []) {
           const senderId = event.sender.id;
-          const customer = await getOrCreateCustomer(senderId);
           
-          if (customer.bot_paused) return res.status(200).send("EVENT_RECEIVED");
-
-          if (event.message && event.message.text) {
-            const reply = await generateAIResponse(senderId, event.message.text);
-            await sendMessage(senderId, reply);
-          } else if (event.message) {
-            // Handle non-text (voice, image, etc.)
-            const reply = "ခဏလေးစောင့်ပေးပါခင်ဗျာ၊ ကျွန်တော်တို့ team ကနေ ပြန်ဆက်သွယ်ပေးပါမယ်။ 🙏";
-            await sendMessage(senderId, reply);
-            await notifyOwnerDashboard(customer.id, "non_text_message", "Non-text Message", `Customer sent a ${Object.keys(event.message)[0]}`);
+          // Use a queue to process messages for this user sequentially
+          if (!userQueues[senderId]) {
+            userQueues[senderId] = Promise.resolve();
           }
+
+          userQueues[senderId] = userQueues[senderId].then(async () => {
+            const customer = await getOrCreateCustomer(senderId);
+            if (customer.bot_paused) return;
+
+            if (event.message && event.message.text) {
+              await processMessage(senderId, event.message.text);
+            } else if (event.message) {
+              const reply = "ခဏလေးစောင့်ပေးပါခင်ဗျာ၊ ကျွန်တော်တို့ team ကနေ ပြန်ဆက်သွယ်ပေးပါမယ်။ 🙏";
+              await sendMessage(senderId, reply);
+              await notifyOwnerDashboard(customer.id, "non_text_message", "Non-text Message", `Customer sent a ${Object.keys(event.message)[0]}`);
+            }
+          });
         }
       }
+      return;
     }
-    return res.status(200).send("EVENT_RECEIVED");
   }
   return res.status(405).send("Method not allowed");
 }

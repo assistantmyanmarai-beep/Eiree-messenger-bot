@@ -76,7 +76,7 @@ async function saveConversation(customerId: number, messageType: string, message
 }
 
 async function getProducts() {
-  return (await supabaseQuery("products", "GET", null, "select=*&is_active=eq.true")) || [];
+  return (await supabaseQuery("products", "GET", null, "is_active=eq.true&select=*")) || [];
 }
 
 async function saveOrder(orderData: any) {

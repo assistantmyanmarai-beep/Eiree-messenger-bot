@@ -9,91 +9,42 @@ const FACEBOOK_PAGE_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 const FACEBOOK_WEBHOOK_VERIFY_TOKEN = process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-// System errors (code crash) → developer ဆီ
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-
-// Business notifications (order, follow-up) → owner/client ဆီ
 const OWNER_TELEGRAM_BOT_TOKEN = process.env.OWNER_TELEGRAM_BOT_TOKEN;
 const OWNER_TELEGRAM_CHAT_ID = process.env.OWNER_TELEGRAM_CHAT_ID;
 
 // ═══════════════════════════════════════════════════════════════
-// OUTPUT SANITIZER
-// AI reply ထဲမှာ internal command တွေ ရောနေရင် ဖယ်ထုတ်မယ်
+// OUTPUT SANITIZER (MUST)
+// AI reply ထဲမှာ internal patterns တွေ ပါလာရင် ဖယ်ထုတ်မယ်
 // Customer ဆီ သန့်ရှင်းတဲ့ text သက်သက်ပဲ ရောက်ရမယ်
 // ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
 
-  // Internal commands တွေ ဖယ်ထုတ်
-  const internalPatterns = [
-    /NEED_FOLLOW_UP:\[.*?\]/gs,
-    /NEED_FOLLOW_UP:[^\n]*/g,
-    /PRICE_UNCERTAIN:[^\n]*/g,
-    /PRICE_UNCERTAIN/g,
-    /NEED_HUMAN_SUPPORT:\[.*?\]/gs,
-    /NEED_HUMAN_SUPPORT:[^\n]*/g,
-    /ORDER_INTENT_DETECTED:[^\n]*/g,
-    /\[.*?internal.*?\]/gi,
-    /\[.*?command.*?\]/gi,
-  ];
-
-  let cleaned = text;
-  for (const pattern of internalPatterns) {
-    cleaned = cleaned.replace(pattern, "");
-  }
-
-  // ပိုနေတဲ့ blank lines ရှင်းပြီး trim
-  cleaned = cleaned.replace(/\n{3,}/g, "\n\n").trim();
+  let cleaned = text
+    // Internal command patterns
+    .replace(/NEED_FOLLOW_UP:\[.*?\]/gs, "")
+    .replace(/NEED_FOLLOW_UP:[^\n]*/g, "")
+    .replace(/PRICE_UNCERTAIN:[^\n]*/g, "")
+    .replace(/PRICE_UNCERTAIN/g, "")
+    .replace(/NEED_HUMAN_SUPPORT:\[.*?\]/gs, "")
+    .replace(/NEED_HUMAN_SUPPORT:[^\n]*/g, "")
+    .replace(/ORDER_INTENT_DETECTED:[^\n]*/g, "")
+    .replace(/ORDER_COLLECTING/g, "")
+    .replace(/ORDER_COMPLETE:\{.*?\}/gs, "")
+    .replace(/NOTIFY_OWNER:[^\n]*/g, "")
+    // ဈေးနှုန်းဖြည့်ပါ ကဲ့သို့သော ပြဿနာဖြစ်ဖူးသော patterns
+    .replace(/ဈေးနှုန်းဖြည့်ပါ/g, "")
+    .replace(/\[.*?ဖြည့်ပါ.*?\]/g, "")
+    // Bracket commands
+    .replace(/\[COMMAND:.*?\]/g, "")
+    .replace(/\[ACTION:.*?\]/g, "")
+    // Extra blank lines
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
   return cleaned || "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
-}
-
-// ═══════════════════════════════════════════════════════════════
-// SITUATION DETECTOR — Code ဘက်ကပဲ situation စစ်မယ်
-// AI ကို command မတောင်းတော့ဘဲ AI က text ပဲပြောပါစေ
-// ═══════════════════════════════════════════════════════════════
-interface SituationResult {
-  type: "normal" | "price_query" | "followup_needed" | "order_intent";
-  detectedProduct?: string;
-}
-
-function detectSituation(messageText: string, aiReply: string, hasActiveOrder: boolean): SituationResult {
-  const msg = messageText.toLowerCase();
-  const reply = aiReply.toLowerCase();
-
-  // Order intent — customer message ကိုကြည့်
-  const orderIntentWords = [
-    "မှာမယ်", "မှာချင်တယ်", "မှာပါမယ်",
-    "ဝယ်မယ်", "ဝယ်ချင်တယ်",
-    "ယူမယ်", "ယူချင်တယ်",
-    "အော်ဒါတင်", "order တင်",
-    "ပေးလိုက်တော့", "ပို့ပေးပါ",
-  ];
-  const serviceQueryWords = [
-    "ဘာဝန်ဆောင်မှု", "ဝန်ဆောင်မှုတွေ",
-    "ဘာတွေပေး", "ဘာပေး", "ဘာများပေး",
-    "ဘယ်လိုဝန်ဆောင်", "service",
-  ];
-  const isServiceQuery = serviceQueryWords.some(w => msg.includes(w));
-  const hasOrderIntent = !isServiceQuery && orderIntentWords.some(w => msg.includes(w));
-
-  // Price query — ဈေးနှုန်းမသေချာမှုကိုစစ်
-  const priceUncertainWords = ["ဘယ်လောက်လဲ", "ဈေးနှုန်း", "ဘယ်ဈေး", "စျေးနှုန်း"];
-  const hasPriceQuery = priceUncertainWords.some(w => msg.includes(w));
-
-  // Follow-up — order ပြီးနောက် ဆက်မေးတာ
-  const followupWords = ["ဘယ်ရက်", "ဘယ်တော့", "လာတပ်", "ပို့မလဲ", "ဆက်သွယ်", "တပ်ဆင်", "COD", "cash", "delivery", "အာမခံ", "warranty"];
-  const hasFollowup = hasActiveOrder && followupWords.some(w => msg.includes(w));
-
-  if (hasFollowup) return { type: "followup_needed" };
-  if (hasOrderIntent) return { type: "order_intent" };
-  if (hasPriceQuery && (reply.includes("မသိ") || reply.includes("မသေချာ") || reply.includes("ဆက်သွယ်"))) {
-    return { type: "price_query" };
-  }
-
-  return { type: "normal" };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -122,8 +73,6 @@ async function supabaseQuery(table: string, method: string, body?: any, query?: 
 // ═══════════════════════════════════════════════════════════════
 // NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════════
-
-// Developer ဆီ — system/code error တွေ
 async function notifySystemError(msg: string) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
   try {
@@ -135,7 +84,6 @@ async function notifySystemError(msg: string) {
   } catch (e: any) { console.error("System Telegram error:", e.message); }
 }
 
-// Owner/Client ဆီ — business events (order, follow-up)
 async function notifyOwnerTelegram(msg: string) {
   if (!OWNER_TELEGRAM_BOT_TOKEN || !OWNER_TELEGRAM_CHAT_ID) return;
   try {
@@ -147,7 +95,6 @@ async function notifyOwnerTelegram(msg: string) {
   } catch (e: any) { console.error("Owner Telegram error:", e.message); }
 }
 
-// Dashboard notification
 async function notifyOwnerDashboard(customerId: number, type: string, title: string, content: string, orderId: number | null = null) {
   if (!customerId) return;
   try {
@@ -195,7 +142,7 @@ async function getOrCreateCustomer(psid: string) {
 // ═══════════════════════════════════════════════════════════════
 // CONVERSATION
 // ═══════════════════════════════════════════════════════════════
-async function getConversationHistory(customerId: number, limit = 15) {
+async function getConversationHistory(customerId: number, limit = 20) {
   if (!customerId) return [];
   try {
     return (await supabaseQuery("conversations", "GET", null,
@@ -216,7 +163,7 @@ async function saveConversation(customerId: number, messageType: string, message
 }
 
 // ═══════════════════════════════════════════════════════════════
-// PRODUCTS — stock ရှိ/မရှိ သာပြော၊ အရေအတွက် မပြော
+// PRODUCTS
 // ═══════════════════════════════════════════════════════════════
 async function getProducts() {
   try {
@@ -233,7 +180,6 @@ async function deductStock(productId: number, quantity: number) {
     if (!product || product.length === 0) return;
     const newStock = Math.max(0, (product[0].stock_quantity || 0) - quantity);
     await supabaseQuery("products", "PATCH", { stock_quantity: newStock }, `id=eq.${productId}`);
-    console.log(`Stock deducted: ${product[0].name} → ${newStock}`);
   } catch (e: any) { console.error("deductStock error:", e); }
 }
 
@@ -278,40 +224,26 @@ async function updateContext(customerId: number, data: any) {
   } catch (e: any) { console.error("updateContext error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CONTEXT PARSER — preferences column ထဲကနေ data ထုတ်
-// ═══════════════════════════════════════════════════════════════
 function parsePreferences(preferences: any) {
   const defaults = {
     address: "",
-    order_state: null as string | null,
+    collecting_order: false,
     pending_product: null as string | null,
     pending_order: null as any,
-    is_preorder: false,
     has_active_order: false,
   };
-
   if (!preferences) return defaults;
-
   try {
     const p = typeof preferences === "string" && preferences.startsWith("{")
       ? JSON.parse(preferences)
       : typeof preferences === "object" ? preferences : null;
-
-    if (!p) {
-      // Plain string (e.g. "အကို") — address အဖြစ်သုံး
-      if (typeof preferences === "string" && preferences !== "pending") {
-        return { ...defaults, address: preferences };
-      }
-      return defaults;
-    }
-
+    if (!p) return typeof preferences === "string" && preferences !== "pending"
+      ? { ...defaults, address: preferences } : defaults;
     return {
       address: p.address ?? "",
-      order_state: p.order_state || null,
+      collecting_order: p.collecting_order || false,
       pending_product: p.pending_product || null,
       pending_order: p.pending_order || null,
-      is_preorder: p.is_preorder || false,
       has_active_order: p.has_active_order || false,
     };
   } catch { return defaults; }
@@ -345,20 +277,6 @@ async function detectGenderFromName(name: string): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// AI TRAINING CONFIG — Dashboard ကနေ prompt ပြောင်းလို့ရ
-// ═══════════════════════════════════════════════════════════════
-async function getSystemPromptFromDB(): Promise<string | null> {
-  try {
-    const result = await supabaseQuery("ai_training_config", "GET", null,
-      "is_active=eq.true&select=*&order=updated_at.desc&limit=1");
-    if (result && result.length > 0) {
-      return result[0].system_prompt || result[0].prompt_content || result[0].content || null;
-    }
-    return null;
-  } catch { return null; }
-}
-
-// ═══════════════════════════════════════════════════════════════
 // FACEBOOK SEND
 // ═══════════════════════════════════════════════════════════════
 async function sendMessage(recipientId: string, text: string) {
@@ -375,44 +293,11 @@ async function sendMessage(recipientId: string, text: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CORE AI CALL — clean text သာ return လုပ်မယ်
-// Internal commands ထွက်မလာအောင် prompt မှာ မတောင်းတော့ဘဲ
-// Code ဘက်ကပဲ situation detect လုပ်မယ်
+// ORDER DETAILS PARSER
 // ═══════════════════════════════════════════════════════════════
-async function callAI(systemPrompt: string, historyMessages: any[], userMessage: string): Promise<string> {
-  try {
-    const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...historyMessages,
-          { role: "user", content: userMessage },
-        ],
-        max_tokens: 300,
-        temperature: 0.7,
-      },
-      {
-        headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-        timeout: 15000,
-      }
-    );
-
-    const raw = response.data.choices[0]?.message?.content || "";
-    // Sanitize — internal command တွေ ဖယ်ထုတ်မယ်
-    return sanitizeReply(raw);
-  } catch (error: any) {
-    console.error("AI call error:", error.response?.data || error.message);
-    await notifySystemError(`AI Error: ${JSON.stringify(error.response?.data || error.message)}`);
-    return "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ORDER DETAILS PARSE — AI နဲ့ နာမည်/ဖုန်း/လိပ်စာ ထုတ်ယူ
-// ═══════════════════════════════════════════════════════════════
-async function parseOrderDetails(messageText: string): Promise<{ name: string | null; phone: string | null; address: string | null; quantity: number }> {
+async function parseOrderDetails(messageText: string): Promise<{
+  name: string | null; phone: string | null; address: string | null; quantity: number;
+}> {
   try {
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
@@ -420,7 +305,7 @@ async function parseOrderDetails(messageText: string): Promise<{ name: string | 
         model: "google/gemini-2.5-flash",
         messages: [{
           role: "user",
-          content: `Customer message: "${messageText}"\n\nExtract ONLY with valid JSON, no markdown, no other text:\n{"name":null,"phone":null,"address":null,"quantity":1}`,
+          content: `Customer message: "${messageText}"\n\nExtract ONLY with valid JSON, no markdown:\n{"name":null,"phone":null,"address":null,"quantity":1}`,
         }],
         max_tokens: 150,
         temperature: 0.1,
@@ -429,14 +314,11 @@ async function parseOrderDetails(messageText: string): Promise<{ name: string | 
     );
     const raw = response.data.choices[0]?.message?.content || "{}";
     return JSON.parse(raw.replace(/```json|```/g, "").trim());
-  } catch (e) {
-    console.error("parseOrderDetails error:", e);
-    return { name: null, phone: null, address: null, quantity: 1 };
-  }
+  } catch { return { name: null, phone: null, address: null, quantity: 1 }; }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MAIN AI RESPONSE
+// MAIN AI RESPONSE — AI ကပဲ flow ထိန်းမယ်
 // ═══════════════════════════════════════════════════════════════
 async function generateAIResponse(psid: string, messageText: string): Promise<string> {
   const fallback = "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
@@ -446,321 +328,232 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
     if (!customer?.id) return fallback;
 
     const [history, products, context] = await Promise.all([
-      getConversationHistory(customer.id, 15),
+      getConversationHistory(customer.id, 20),
       getProducts(),
       getContext(customer.id),
     ]);
 
     const prefs = parsePreferences(context?.preferences);
 
-    // ── Order flow states ──
-    if (prefs.order_state === "awaiting_details") {
-      return await handleOrderDetails(customer, messageText, prefs, products, context);
-    }
-    if (prefs.order_state === "awaiting_confirm") {
-      return await handleOrderConfirm(customer, messageText, prefs, context);
-    }
-
-    // ── Post-order conversation — has_active_order=true ──
-    if (prefs.has_active_order) {
-      return await handlePostOrder(customer, messageText, prefs, history);
-    }
-
-    // ── First message ever ──
+    // ── First message ──
     if (!context?.preferences && history.length === 0) {
-      await updateContext(customer.id, { preferences: { address: "", order_state: null, has_active_order: false } });
+      await updateContext(customer.id, {
+        preferences: { address: "", collecting_order: false, has_active_order: false },
+      });
       const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
       await saveConversation(customer.id, "customer", messageText);
       await saveConversation(customer.id, "bot", greeting);
       return greeting;
     }
 
-    // ── Normal conversation ──
-    // Product list — stock ရှိ/မရှိ သာပြော
+    // ── Product list ──
     const productList = products.map((p: any) => {
       const stockStatus = p.stock_quantity > 0 ? "Stock ရှိပါတယ်" : "Stock မရှိ (Pre-order ရနိုင်)";
-      return `• ${p.name} — ${Number(p.price_mmk).toLocaleString()} MMK — ${stockStatus}\n  ${p.description || ""}`;
+      return `• ID:${p.id} | ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK | ${stockStatus}${p.description ? `\n  ${p.description}` : ""}`;
     }).join("\n\n");
 
+    // ── Conversation history ──
     const historyMessages = [...history].reverse().map((h: any) => ({
       role: h.message_type === "customer" ? "user" : "assistant",
       content: h.message_text,
     }));
 
+    // ── Address rule ──
     const addressRule = prefs.address
       ? `ဖောက်သည်ကို "${prefs.address}" ဟုသာ ခေါ်ပါ။`
       : `ဖောက်သည်ကို နာမ်စားဖြင့် မခေါ်ပါနဲ့။ ယဉ်ကျေးစွာ ဆက်သွယ်ပါ။`;
 
-    const dbPrompt = await getSystemPromptFromDB();
-    const defaultPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
+    // ── Collecting order context ──
+    const orderContext = prefs.collecting_order
+      ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ ဖြစ်သည် (Product: ${prefs.pending_product || "မသေချာသေး"})။ ဖောက်သည်ထံမှ နာမည်၊ ဖုန်းနံပါတ်၊ လိပ်စာ ရယူနေသည်။`
+      : "";
+
+    // ══════════════════════════════════════════════════════
+    // SYSTEM PROMPT — AI ကပဲ flow ထိန်းမယ်
+    // Internal commands မသုံးဘဲ JSON response နဲ့ communicate
+    // ══════════════════════════════════════════════════════
+    const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
 ━━━ စကားပြောပုံစံ ━━━
 • ${addressRule} "ရှင့်" မသုံးနဲ့။
 • မိမိကို "ခင်ဗျာ" သုံးပါ။
-• သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ စာကြောင်း ၃ ကြောင်းထက်မပိုပါနဲ့။
-• Bullet point၊ စာရှည်ကြီး ရှောင်ပါ။
+• သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
+• Bullet point ကြီးများ ရှောင်ပါ။
 
-━━━ အရောင်းဗျူဟာ ━━━
-• ပစ္စည်းမေးရင် အကျဉ်းချုပ်ပြောပြပြီး စိတ်ဝင်စားမှ အသေးစိတ်ဆက်ပြော။
-• ပစ္စည်းကောင်းကွက်ကို ထင်ရှားပြောပြီး ဝယ်ချင်အောင် လုပ်ပါ။
-• Conversation history ကိုကြည့်ပြီး context နဲ့ နားလည်ပါ။
-• Stock မရှိရင် Pre-order ရနိုင်ကြောင်း ပြောပြီး order ဆက်ကောက်ပါ။
-• Stock အရေအတွက် ဘယ်တော့မှ မဖော်ပြနဲ့။
+━━━ Response Format ━━━
+သင်သည် အမြဲ JSON format နဲ့ respond ရမည်:
+{
+  "reply": "Customer ဆီပို့မယ့် message",
+  "action": "none" | "start_order" | "save_order" | "notify_owner",
+  "order_data": null | { "product_id": number, "product_name": string, "is_preorder": boolean },
+  "collected_data": null | { "name": string, "phone": string, "address": string, "quantity": number }
+}
 
-━━━ ဝယ်ယူလိုသော သဘောထား ━━━
-Customer က ဝယ်ချင်တဲ့ သဘောထားပြသရင် —
-"နာမည်၊ ဖုန်းနံပါတ်နဲ့ လိပ်စာလေး တစ်ခါတည်းပြောပေးပါနော်ခင်ဗျာ 😊" ဟုသာ မေးပါ။
+━━━ Action Rules ━━━
+• "none" — ပုံမှန် conversation
+• "start_order" — Customer က ဝယ်ယူလိုသော intent ရှိမှသာ (မှာမယ်၊ ဝယ်မယ်၊ ယူမယ် — တိတိကျကျသော intent)
+• "save_order" — Customer က name + phone + address ၃ ခုစလုံး ပေးပြီးမှသာ
+• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း (တပ်ဆင်ချိန်၊ delivery date၊ အာမခံ)
+
+━━━ Smart Context Handling (MUST) ━━━
+${orderContext}
+• အော်ဒါ ကောက်နေချိန်မှာ Customer က တစ်ခြားမေးခွန်း ကြားဖြတ်မေးလာရင်:
+  1. အဲ့ဒီ မေးခွန်းကို ဦးစွာ ဖြေပါ
+  2. ပြီးမှ "နာမည်၊ ဖုန်းနံပါတ်နဲ့ လိပ်စာလေး ဆက်ပြောပေးပါနော်" ဆိုပြီး သဘာဝကျကျ ပြန်ဆက်ပါ
+  3. action: "none" ထားပါ (state မပြောင်းဘဲ)
+• Customer က name/phone/address မပါဘဲ တစ်ခြားပြောနေရင် → action: "none"
+• Customer က cancel လိုချင်တဲ့ သဘောထားရှိရင် → collecting_order ရပ်ပြီး action: "none"
 
 ━━━ ဈေးနှုန်း STRICT RULE ━━━
-⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။ မသေချာရင် "ကျွန်တော်တို့ team ကနေ အတိအကျ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ" ဟုသာ ဖြေပါ။
+⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။
+⚠️ Stock အရေအတွက် (ဘယ်နှလုံး) ဘယ်တော့မှ မပြောရ — "Stock ရှိပါတယ်" / "Pre-order ရနိုင်" သာပြောရ။
+⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
 
-━━━ မဖြေနိုင်တဲ့ မေးခွန်းများ ━━━
-တပ်ဆင်ချိန်၊ ဘယ်ရက်ပို့မလဲ၊ COD ရလား၊ အာမခံ — "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏" ဟုသာ ဖြေပါ။
-
-━━━ ပစ္စည်းများ ━━━
+━━━ Products ━━━
 ${productList}`;
 
-    const systemPrompt = dbPrompt
-      ? dbPrompt.replace(/\{addressTerm\}|\$\{addressTerm\}/g, prefs.address).replace(/\{productList\}|\$\{productList\}/g, productList)
-      : defaultPrompt;
+    // ── AI Call ──
+    const response = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...historyMessages,
+          { role: "user", content: messageText },
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+      },
+      {
+        headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+        timeout: 15000,
+      }
+    );
 
-    const aiReply = await callAI(systemPrompt, historyMessages, messageText);
+    const rawContent = response.data.choices[0]?.message?.content || "{}";
 
-    // Code ဘက်ကပဲ order intent detect လုပ်မယ်
-    const situation = detectSituation(messageText, aiReply, prefs.has_active_order);
+    // ── Parse AI JSON response ──
+    let aiResponse: any = { reply: fallback, action: "none", order_data: null, collected_data: null };
+    try {
+      const cleaned = rawContent.replace(/```json|```/g, "").trim();
+      // JSON ထဲမှာ reply ပါရင် parse လုပ်
+      if (cleaned.startsWith("{")) {
+        aiResponse = JSON.parse(cleaned);
+      } else {
+        // AI က plain text ပြန်ခဲ့ရင် reply အဖြစ် treat
+        aiResponse.reply = cleaned;
+      }
+    } catch {
+      // Parse မအောင်မြင်ရင် raw content ကို reply အဖြစ် သုံး
+      aiResponse.reply = rawContent;
+    }
 
-    if (situation.type === "order_intent") {
-      // Product ရှာ
-      const matchedProduct = products.find((p: any) =>
-        messageText.toLowerCase().includes(p.name.toLowerCase()) ||
-        history.slice(0, 5).some((h: any) => h.message_text?.toLowerCase().includes(p.name.toLowerCase()))
-      );
-      const isPreorder = matchedProduct && matchedProduct.stock_quantity <= 0;
+    // ── Output Sanitizer (MUST) ──
+    const safeReply = sanitizeReply(aiResponse.reply || fallback);
+
+    // ── Action Handler ──
+    const action = aiResponse.action || "none";
+
+    // START ORDER — collecting_order state on
+    if (action === "start_order" && aiResponse.order_data) {
+      const product = products.find((p: any) => p.id === aiResponse.order_data.product_id)
+        || products.find((p: any) => p.name === aiResponse.order_data.product_name)
+        || products.find((p: any) => aiResponse.order_data.product_name?.toLowerCase().includes(p.name.toLowerCase()));
 
       await updateContext(customer.id, {
         preferences: {
           address: prefs.address,
-          order_state: "awaiting_details",
-          pending_product: matchedProduct?.name || null,
-          is_preorder: isPreorder || false,
+          collecting_order: true,
+          pending_product: product?.name || aiResponse.order_data.product_name,
+          pending_product_id: product?.id || null,
+          is_preorder: product ? product.stock_quantity <= 0 : false,
           has_active_order: false,
         },
       });
-
-      const sal = prefs.address ? `${prefs.address}၊ ` : "";
-      const askDetails = isPreorder
-        ? `${sal}${matchedProduct.name} က လက်ရှိ Stock မရှိသေးပါဘူးခင်ဗျာ။ Pre-order အနေနဲ့ ၇-၁၀ ရက်အတွင်း ပို့ပေးနိုင်ပါတယ် 😊\n\nနာမည်၊ ဖုန်းနံပါတ်နဲ့ လိပ်စာလေး ပြောပေးပါနော်ခင်ဗျာ။`
-        : `${sal}အော်ဒါတင်ပေးပါမယ်ခင်ဗျာ 😊 နာမည်၊ ဖုန်းနံပါတ်နဲ့ လိပ်စာလေး တစ်ခါတည်း ပြောပေးပါနော်ခင်ဗျာ။`;
-
-      await saveConversation(customer.id, "customer", messageText);
-      await saveConversation(customer.id, "bot", askDetails);
-      return askDetails;
     }
 
+    // SAVE ORDER — name + phone + address ၃ ခုစလုံး ရပြီ
+    if (action === "save_order" && aiResponse.collected_data) {
+      const { name, phone, address, quantity } = aiResponse.collected_data;
+
+      if (name && phone && address) {
+        const product = prefs.pending_product
+          ? products.find((p: any) =>
+              p.name === prefs.pending_product ||
+              p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase()))
+          : products[0];
+
+        const isPreorder = product && product.stock_quantity <= 0;
+        const totalPrice = product ? Number(product.price_mmk) * (quantity || 1) : 0;
+
+        // Gender detect
+        const detectedGender = await detectGenderFromName(name);
+        const finalAddress = detectedGender || prefs.address;
+
+        // Save order
+        const order = await saveOrder({
+          customer_id: customer.id,
+          product_id: product?.id || null,
+          full_name: name,
+          phone_number: phone,
+          delivery_address: address,
+          quantity: quantity || 1,
+          total_price_mmk: totalPrice,
+          status: isPreorder ? "preorder" : "pending",
+        });
+
+        if (order) {
+          if (product?.id) await deductStock(product.id, quantity || 1);
+
+          const sal = finalAddress ? ` ${finalAddress}` : "";
+          const orderLabel = isPreorder ? "(Pre-order)" : "";
+
+          await notifyOwnerDashboard(
+            customer.id, "new_order",
+            `🛒 အော်ဒါအသစ် ${orderLabel}`,
+            `👤 ${name} | 📞 ${phone} | 📍 ${address} | 📦 ${product?.name} x${quantity || 1} | 💰 ${totalPrice.toLocaleString()} MMK`
+          );
+
+          await notifyOwnerTelegram(
+            `🛒 *အော်ဒါအသစ် ဝင်လာပါပြီ* ${orderLabel}\n\n` +
+            `👤 *${name}*\n📞 ${phone}\n📍 ${address}\n` +
+            `📦 ${product?.name} x${quantity || 1}\n` +
+            `💰 *${totalPrice.toLocaleString()} MMK*\n\n` +
+            `👉 Dashboard မှာ confirm လုပ်ပေးပါ`
+          );
+
+          // State update — order complete
+          await updateContext(customer.id, {
+            preferences: {
+              address: finalAddress,
+              collecting_order: false,
+              pending_product: null,
+              has_active_order: true,
+            },
+          });
+        }
+      }
+    }
+
+    // NOTIFY OWNER — AI မဖြေနိုင်သော မေးခွန်း
+    if (action === "notify_owner") {
+      await notifyOwnerDashboard(customer.id, "human_support_needed", "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`);
+      await notifyOwnerTelegram(
+        `🙋 *ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်*\n\nCustomer မေးတာ: *${messageText}*\n\n👉 Dashboard မှာ reply လုပ်ပေးပါ`
+      );
+    }
+
+    // ── Save conversation ──
     await saveConversation(customer.id, "customer", messageText);
-    await saveConversation(customer.id, "bot", aiReply);
-    return aiReply;
+    await saveConversation(customer.id, "bot", safeReply);
+    return safeReply;
 
   } catch (error: any) {
     console.error("generateAIResponse error:", error);
     await notifySystemError(`generateAIResponse: ${error.message}`);
     return fallback;
   }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// POST-ORDER CONVERSATION
-// Order ပြီးနောက် customer ဆက်မေးလာရင် — AI ဖြေပြီး owner notify
-// ═══════════════════════════════════════════════════════════════
-async function handlePostOrder(customer: any, messageText: string, prefs: any, history: any[]): Promise<string> {
-  const followupKeywords = ["ဘယ်ရက်", "ဘယ်တော့", "လာတပ်", "ပို့မလဲ", "ဆက်သွယ်", "တပ်ဆင်", "COD", "cash on delivery", "delivery", "အာမခံ", "warranty", "မဆက်သွယ်", "မလာသေး", "ဘာမှမဆက်"];
-  const needsFollowup = followupKeywords.some(w => messageText.toLowerCase().includes(w));
-
-  const sal = prefs.address ? `${prefs.address}၊ ` : "";
-
-  if (needsFollowup) {
-    const reply = `${sal}ကျွန်တော်တို့ team ကနေ အကို့ဆီ မကြာမီ ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏`;
-
-    // Owner ကို တိတိကျကျ notify
-    await notifyOwnerDashboard(customer.id, "order_followup", "📞 Follow-up လိုအပ်", `Customer မေးတာ: ${messageText}`);
-    await notifyOwnerTelegram(
-      `📞 *Order ပြီးနောက် Follow-up လိုအပ်ပါတယ်*\n\n` +
-      `Customer မေးတာ: *${messageText}*\n\n` +
-      `👉 ဖောက်သည်ကို တိုက်ရိုက် ဆက်သွယ်ပေးပါ`
-    );
-
-    await saveConversation(customer.id, "customer", messageText);
-    await saveConversation(customer.id, "bot", reply);
-    return reply;
-  }
-
-  // Follow-up မဟုတ်ရင် AI ကပဲ သဘာဝကျကျ ဖြေပါစေ
-  const historyMessages = [...history].reverse().map((h: any) => ({
-    role: h.message_type === "customer" ? "user" : "assistant",
-    content: h.message_text,
-  }));
-
-  const postOrderPrompt = `သင်သည် EIREE MYANMAR ၏ အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
-Customer သည် အော်ဒါ တင်ပြီးနောက် ထပ်မေးနေပါသည်။
-${prefs.address ? `ဖောက်သည်ကို "${prefs.address}" ဟုခေါ်ပါ။` : "နာမ်စားမသုံးဘဲ ယဉ်ကျေးစွာ ပြောပါ။"}
-Order data ထပ်မတောင်းရ။ Order ဆိုင်ရာမဟုတ်သော မေးခွန်းများကိုသာ သဘာဝကျကျ ဖြေပါ။
-စာကြောင်း ၂-၃ ကြောင်းသာ ရေးပါ။`;
-
-  const aiReply = await callAI(postOrderPrompt, historyMessages, messageText);
-
-  await saveConversation(customer.id, "customer", messageText);
-  await saveConversation(customer.id, "bot", aiReply);
-  return aiReply;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ORDER DETAILS COLLECTION
-// ═══════════════════════════════════════════════════════════════
-async function handleOrderDetails(customer: any, messageText: string, prefs: any, products: any[], context: any): Promise<string> {
-  const { name, phone, address, quantity } = await parseOrderDetails(messageText);
-
-  const missing: string[] = [];
-  if (!name) missing.push("နာမည်");
-  if (!phone) missing.push("ဖုန်းနံပါတ်");
-  if (!address) missing.push("လိပ်စာ");
-
-  if (missing.length > 0) {
-    const reply = `${missing.join("၊ ")} လေး ထပ်ပြောပေးပါနော်ခင်ဗျာ 😊`;
-    await saveConversation(customer.id, "customer", messageText);
-    await saveConversation(customer.id, "bot", reply);
-    return reply;
-  }
-
-  const product = prefs.pending_product
-    ? products.find((p: any) =>
-        p.name.toLowerCase().includes(prefs.pending_product.toLowerCase()) ||
-        prefs.pending_product.toLowerCase().includes(p.name.toLowerCase()))
-    : products[0];
-
-  const isPreorder = product && product.stock_quantity <= 0;
-  const totalPrice = product ? Number(product.price_mmk) * (quantity || 1) : 0;
-  const detectedGender = await detectGenderFromName(name);
-  const finalAddress = detectedGender || prefs.address;
-
-  await updateContext(customer.id, {
-    preferences: {
-      address: finalAddress,
-      order_state: "awaiting_confirm",
-      pending_product: product?.name || prefs.pending_product,
-      is_preorder: isPreorder,
-      has_active_order: false,
-      pending_order: {
-        customer_name: name,
-        phone_number: phone,
-        delivery_address: address,
-        quantity: quantity || 1,
-        product_id: product?.id || null,
-        product_name: product?.name || prefs.pending_product,
-        total_price_mmk: totalPrice,
-        is_preorder: isPreorder,
-      },
-    },
-  });
-
-  const preorderNote = isPreorder ? `\n⏳ Pre-order — ၇-၁၀ ရက်အတွင်း ပို့ပေးပါမယ်` : "";
-  const confirmMsg =
-    `အော်ဒါလေးအတည်ပြုပေးပါအုန်းခင်ဗျာ 😊\n\n` +
-    `👤 ${name}\n📞 ${phone}\n📍 ${address}\n` +
-    `📦 ${product?.name || prefs.pending_product} x${quantity || 1}\n` +
-    `💰 ${totalPrice > 0 ? totalPrice.toLocaleString() + " MMK" : ""}` +
-    preorderNote;
-
-  await saveConversation(customer.id, "customer", messageText);
-  await saveConversation(customer.id, "bot", confirmMsg);
-  return confirmMsg;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ORDER CONFIRMATION
-// ═══════════════════════════════════════════════════════════════
-async function handleOrderConfirm(customer: any, messageText: string, prefs: any, context: any): Promise<string> {
-  const confirmWords = ["ဟုတ်ကဲ့", "အင်း", "yes", "ok", "ဟုတ်", "မှာမယ်", "ကောင်းပြီ", "ပြီးပြီ", "တင်ပေး", "ဆက်လုပ်", "ပေးပါ", "confirm"];
-  const cancelWords = ["မမှာတော့", "cancel", "ပယ်ဖျက်", "မလုပ်တော့", "နေပါတော့", "မလို"];
-
-  const lower = messageText.toLowerCase();
-  const isConfirm = confirmWords.some(w => lower.includes(w));
-  const isCancel = cancelWords.some(w => lower.includes(w));
-  const pendingOrder = prefs.pending_order;
-
-  if (isCancel) {
-    await updateContext(customer.id, {
-      preferences: { address: prefs.address, order_state: null, pending_order: null, pending_product: null, has_active_order: false },
-    });
-    const msg = "အဆင်ပြေပါတယ်ခင်ဗျာ 😊 နောက်တစ်ခါ လိုအပ်ရင် ပြန်မေးပါနော်။";
-    await saveConversation(customer.id, "customer", messageText);
-    await saveConversation(customer.id, "bot", msg);
-    return msg;
-  }
-
-  if (isConfirm && pendingOrder) {
-    const orderStatus = pendingOrder.is_preorder ? "preorder" : "pending";
-
-    const order = await saveOrder({
-      customer_id: customer.id,
-      product_id: pendingOrder.product_id,
-      full_name: pendingOrder.customer_name,
-      phone_number: pendingOrder.phone_number,
-      delivery_address: pendingOrder.delivery_address,
-      quantity: pendingOrder.quantity,
-      total_price_mmk: pendingOrder.total_price_mmk,
-      status: orderStatus,
-    });
-
-    if (pendingOrder.product_id && pendingOrder.quantity) {
-      await deductStock(pendingOrder.product_id, pendingOrder.quantity);
-    }
-
-    // has_active_order=true — post-order conversation track လုပ်ဖို့
-    await updateContext(customer.id, {
-      preferences: {
-        address: prefs.address,
-        order_state: null,
-        pending_order: null,
-        pending_product: null,
-        has_active_order: true,
-      },
-    });
-
-    if (order) {
-      const sal = prefs.address ? ` ${prefs.address}` : "";
-      const orderLabel = orderStatus === "preorder" ? "(Pre-order)" : "";
-
-      await notifyOwnerDashboard(
-        customer.id, "new_order",
-        `🛒 အော်ဒါအသစ် ${orderLabel}`,
-        `👤 ${pendingOrder.customer_name} | 📞 ${pendingOrder.phone_number} | 📍 ${pendingOrder.delivery_address} | 📦 ${pendingOrder.product_name} x${pendingOrder.quantity} | 💰 ${pendingOrder.total_price_mmk?.toLocaleString()} MMK`
-      );
-
-      await notifyOwnerTelegram(
-        `🛒 *အော်ဒါအသစ် ဝင်လာပါပြီ* ${orderLabel}\n\n` +
-        `👤 *${pendingOrder.customer_name}*\n` +
-        `📞 ${pendingOrder.phone_number}\n` +
-        `📍 ${pendingOrder.delivery_address}\n` +
-        `📦 ${pendingOrder.product_name} x${pendingOrder.quantity}\n` +
-        `💰 *${pendingOrder.total_price_mmk?.toLocaleString()} MMK*\n\n` +
-        `👉 Dashboard မှာ confirm လုပ်ပေးပါ`
-      );
-
-      const successMsg = pendingOrder.is_preorder
-        ? `Pre-order တင်ပြီးပါပြီ${sal} ✅\n\nမကြာမီ ဖုန်းဆက်ပြီး အသေးစိတ် ရှင်းပြပေးပါမယ်ခင်ဗျာ 🙏`
-        : `အော်ဒါတင်ပြီးပါပြီ${sal} ✅\n\nမကြာမီ ဖုန်းဆက်ပြီး အတည်ပြုပေးပါမယ်ခင်ဗျာ 🙏`;
-
-      await saveConversation(customer.id, "customer", messageText);
-      await saveConversation(customer.id, "bot", successMsg);
-      return successMsg;
-    }
-  }
-
-  // Confirm/Cancel မဟုတ်သေးရင်
-  const reask = "အော်ဒါတင်ပေးရမလားခင်ဗျာ? 😊";
-  await saveConversation(customer.id, "customer", messageText);
-  await saveConversation(customer.id, "bot", reask);
-  return reask;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -793,7 +586,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             tasks.push((async () => {
               try {
-                // Duplicate check
                 if (messageId) {
                   if (await isMessageProcessed(messageId)) {
                     console.log(`Skipping duplicate: ${messageId}`);
@@ -809,13 +601,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   const reply = await generateAIResponse(senderId, event.message.text);
                   await sendMessage(senderId, reply);
                 } else if (event.message) {
-                  // Image, voice, sticker — owner notify
                   const msgType = Object.keys(event.message)
                     .filter(k => k !== "mid" && k !== "seq").join(", ");
                   const reply = "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
                   await sendMessage(senderId, reply);
                   await notifyOwnerDashboard(customer.id, "non_text_message", "📎 Text မဟုတ်တဲ့ Message", `Customer ပို့တာ: ${msgType}`);
-                  await notifyOwnerTelegram(`📎 *Text မဟုတ်တဲ့ Message*\nအမျိုးအစား: ${msgType}\n👉 Dashboard မှာ ကြည့်ပြီး ပြန်ဆက်သွယ်ပေးပါ`);
+                  await notifyOwnerTelegram(`📎 *Text မဟုတ်တဲ့ Message*\nအမျိုးအစား: *${msgType}*\n👉 Dashboard မှာ ကြည့်ပြီး ပြန်ဆက်သွယ်ပေးပါ`);
                 }
               } catch (innerErr: any) {
                 console.error("Task error:", innerErr);

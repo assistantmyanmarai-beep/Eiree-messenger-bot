@@ -64,8 +64,20 @@ function detectSituation(messageText: string, aiReply: string, hasActiveOrder: b
   const reply = aiReply.toLowerCase();
 
   // Order intent — customer message ကိုကြည့်
-  const orderIntentWords = ["မှာမယ်", "ယူမယ်", "ဝယ်မယ်", "ပေးလိုက်တော့", "ရချင်တယ်", "စီစဉ်ပေးပါ", "order တင်", "မှာချင်", "ဝယ်ချင်"];
-  const hasOrderIntent = orderIntentWords.some(w => msg.includes(w));
+  const orderIntentWords = [
+    "မှာမယ်", "မှာချင်တယ်", "မှာပါမယ်",
+    "ဝယ်မယ်", "ဝယ်ချင်တယ်",
+    "ယူမယ်", "ယူချင်တယ်",
+    "အော်ဒါတင်", "order တင်",
+    "ပေးလိုက်တော့", "ပို့ပေးပါ",
+  ];
+  const serviceQueryWords = [
+    "ဘာဝန်ဆောင်မှု", "ဝန်ဆောင်မှုတွေ",
+    "ဘာတွေပေး", "ဘာပေး", "ဘာများပေး",
+    "ဘယ်လိုဝန်ဆောင်", "service",
+  ];
+  const isServiceQuery = serviceQueryWords.some(w => msg.includes(w));
+  const hasOrderIntent = !isServiceQuery && orderIntentWords.some(w => msg.includes(w));
 
   // Price query — ဈေးနှုန်းမသေချာမှုကိုစစ်
   const priceUncertainWords = ["ဘယ်လောက်လဲ", "ဈေးနှုန်း", "ဘယ်ဈေး", "စျေးနှုန်း"];
@@ -378,7 +390,7 @@ async function callAI(systemPrompt: string, historyMessages: any[], userMessage:
           ...historyMessages,
           { role: "user", content: userMessage },
         ],
-        max_tokens: 400,
+        max_tokens: 300,
         temperature: 0.7,
       },
       {

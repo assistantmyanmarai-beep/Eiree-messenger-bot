@@ -349,12 +349,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
         await Promise.all(tasks);
-        } catch (err) {
-          console.error("Background Handler Error:", err);
-        }
-      })();
-
-      return;
+      } catch (err) {
+        console.error("Handler Error:", err);
+      }
+      return res.status(200).send("EVENT_RECEIVED");
     }
   }
   return res.status(405).send("Method not allowed");

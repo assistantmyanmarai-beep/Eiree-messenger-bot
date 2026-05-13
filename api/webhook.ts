@@ -291,7 +291,36 @@ async function sendMessage(recipientId: string, text: string) {
     await notifySystemError(`Facebook Send Error: ${error?.response?.data?.error?.message || error.message}`);
   }
 }
+// ═══════════════════════════════════════════════════════════════
+// MEDIA SENDER — DISABLED (MEDIA_ENABLED = true ပြောင်းမှ အလုပ်လုပ်မယ်)
+// ═══════════════════════════════════════════════════════════════
+const MEDIA_ENABLED = false;
 
+async function sendImageMessage(recipientId: string, imageUrl: string): Promise<void> {
+  if (!MEDIA_ENABLED || !imageUrl?.trim()) return;
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v18.0/me/messages`,
+      { recipient: { id: recipientId }, message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: true } } } },
+      { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (e: any) {
+    console.error("sendImageMessage error (non-critical):", e?.response?.data || e.message);
+  }
+}
+
+async function sendVideoMessage(recipientId: string, videoUrl: string): Promise<void> {
+  if (!MEDIA_ENABLED || !videoUrl?.trim()) return;
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v18.0/me/messages`,
+      { recipient: { id: recipientId }, message: { attachment: { type: "video", payload: { url: videoUrl, is_reusable: true } } } },
+      { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (e: any) {
+    console.error("sendVideoMessage error (non-critical):", e?.response?.data || e.message);
+  }
+}
 // ═══════════════════════════════════════════════════════════════
 // ORDER DETAILS PARSER
 // ═══════════════════════════════════════════════════════════════

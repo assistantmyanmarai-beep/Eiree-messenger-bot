@@ -665,6 +665,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                 if (event.message?.text) {
                   const reply = await generateAIResponse(senderId, event.message.text);
+                  // AI ဖြေပြီးနောက် bot_paused ထပ်စစ် — pause ဖြစ်နေရင် discard
+const freshCheck = await supabaseQuery("customers", "GET", null, `psid=eq.${senderId}&select=bot_paused`);
+if (freshCheck?.[0]?.bot_paused) {
+  console.log("Bot paused after AI response — reply discarded");
+  return;
+}
                   await sendMessage(senderId, reply);
                 } else if (event.message) {
                   const msgType = Object.keys(event.message)

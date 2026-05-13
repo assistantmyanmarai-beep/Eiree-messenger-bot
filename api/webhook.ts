@@ -138,7 +138,43 @@ async function getOrCreateCustomer(psid: string) {
     return { id: null, psid, bot_paused: false };
   }
 }
+// ═══════════════════════════════════════════════════════════════
+// FETCH & SAVE MESSENGER PROFILE
+// Customer message တိုင်း Facebook API ကနေ name/photo ယူပြီး
+// customers table မှာ update လုပ်မယ်
+// ═══════════════════════════════════════════════════════════════
+async function fetchAndSaveMessengerProfile(psid: string, customerId: number): Promise<void> {
+  if (!customerId) return;
+  try {
+    const response = await axios.get(
+      `https://graph.facebook.com/v18.0/${psid}`,
+      {
+        params: {
+          fields: "name,first_name,last_name,profile_pic",
+          access_token: FACEBOOK_PAGE_ACCESS_TOKEN,
+        },
+        timeout: 5000,
+      }
+    );
 
+    const { name, first_name, last_name, profile_pic } = response.data;
+
+    await supabaseQuery(
+      "customers", "PATCH",
+      {
+        messenger_name: name || null,
+        first_name: first_name || null,
+        last_name: last_name || null,
+        profile_pic_url: profile_pic || null,
+        updated_at: new Date().toISOString(),
+      },
+      `id=eq.${customerId}`
+    );
+  } catch (e: any) {
+    // Profile ယူမရရင် log သာရေး — bot မရပ်ဘဲ ဆက်သွားမယ်
+    console.error("fetchAndSaveMessengerProfile error (non-critical):", e.message);
+  }
+}
 // ═══════════════════════════════════════════════════════════════
 // CONVERSATION
 // ═══════════════════════════════════════════════════════════════
@@ -355,7 +391,8 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
   try {
     const customer = await getOrCreateCustomer(psid);
     if (!customer?.id) return fallback;
-
+// Background မှာ profile update — bot flow မထိဘဲ
+fetchAndSaveMessengerProfile(psid, customer.id).catch(console.error);
     const [history, products, context] = await Promise.all([
       getConversationHistory(customer.id, 20),
       getProducts(),

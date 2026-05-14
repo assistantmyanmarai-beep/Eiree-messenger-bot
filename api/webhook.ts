@@ -3,7 +3,6 @@ import axios from "axios";
 
 // ═══════════════════════════════════════════════════════════════
 // ENVIRONMENT VARIABLES
-// Vercel Dashboard ထဲမှာ သတ်မှတ်ထားတဲ့ secret keys တွေ
 // ═══════════════════════════════════════════════════════════════
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const FACEBOOK_PAGE_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
@@ -16,20 +15,15 @@ const OWNER_TELEGRAM_BOT_TOKEN = process.env.OWNER_TELEGRAM_BOT_TOKEN;
 const OWNER_TELEGRAM_CHAT_ID = process.env.OWNER_TELEGRAM_CHAT_ID;
 
 // ═══════════════════════════════════════════════════════════════
-// AUTO-RESUME DURATION
-// Admin ဖြေပြီး ဘယ်နှမိနစ်အကြာမှာ Bot ပြန် active ဖြစ်မလဲ
-// 30 မိနစ် = 30 * 60 * 1000 milliseconds
+// AUTO-RESUME DURATION — 30 မိနစ်
 // ═══════════════════════════════════════════════════════════════
-const AUTO_RESUME_MS = 30 * 60 * 1000; // 30 minutes
+const AUTO_RESUME_MS = 30 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════
-// OUTPUT SANITIZER (MUST)
-// AI reply ထဲမှာ internal patterns တွေ ပါလာရင် ဖယ်ထုတ်မယ်
-// Customer ဆီ သန့်ရှင်းတဲ့ text သက်သက်ပဲ ရောက်ရမယ်
+// OUTPUT SANITIZER
 // ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
-
   let cleaned = text
     .replace(/NEED_FOLLOW_UP:\[.*?\]/gs, "")
     .replace(/NEED_FOLLOW_UP:[^\n]*/g, "")
@@ -47,14 +41,11 @@ function sanitizeReply(text: string): string {
     .replace(/\[ACTION:.*?\]/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-
   return cleaned || "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 }
 
 // ═══════════════════════════════════════════════════════════════
 // SUPABASE HELPER
-// Database နဲ့ ဆက်သွယ်ဖို့ universal function
-// table = ဘယ် table, method = GET/POST/PATCH/DELETE
 // ═══════════════════════════════════════════════════════════════
 async function supabaseQuery(table: string, method: string, body?: any, query?: string) {
   const url = `${SUPABASE_URL}/rest/v1/${table}${query ? `?${query}` : ""}`;
@@ -77,8 +68,7 @@ async function supabaseQuery(table: string, method: string, body?: any, query?: 
 }
 
 // ═══════════════════════════════════════════════════════════════
-// NOTIFICATIONS — SYSTEM ERROR (Developer အတွက်)
-// Bot မှာ technical ပြဿနာဖြစ်ရင် developer Telegram ထဲ ပို့မယ်
+// NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════════
 async function notifySystemError(msg: string) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
@@ -91,10 +81,6 @@ async function notifySystemError(msg: string) {
   } catch (e: any) { console.error("System Telegram error:", e.message); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// NOTIFICATIONS — OWNER TELEGRAM
-// Order အသစ်၊ Human support လိုအပ်တဲ့အခါ Owner ကို Telegram ပို့မယ်
-// ═══════════════════════════════════════════════════════════════
 async function notifyOwnerTelegram(msg: string) {
   if (!OWNER_TELEGRAM_BOT_TOKEN || !OWNER_TELEGRAM_CHAT_ID) return;
   try {
@@ -106,10 +92,6 @@ async function notifyOwnerTelegram(msg: string) {
   } catch (e: any) { console.error("Owner Telegram error:", e.message); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// NOTIFICATIONS — OWNER DASHBOARD
-// Dashboard ထဲမှာ မြင်ရဖို့ owner_notifications table ထဲ သိမ်းမယ်
-// ═══════════════════════════════════════════════════════════════
 async function notifyOwnerDashboard(customerId: number, type: string, title: string, content: string, orderId: number | null = null) {
   if (!customerId) return;
   try {
@@ -125,8 +107,6 @@ async function notifyOwnerDashboard(customerId: number, type: string, title: str
 
 // ═══════════════════════════════════════════════════════════════
 // DEDUPLICATION
-// Message တစ်ခုကို ၂ ကြိမ် process မဖြစ်အောင် စစ်မယ်
-// Facebook က တစ်ခါတစ်ရံ same message ကို ၂ ခါ ပို့တတတ်တယ်
 // ═══════════════════════════════════════════════════════════════
 async function isMessageProcessed(messageId: string): Promise<boolean> {
   try {
@@ -142,8 +122,7 @@ async function markMessageProcessed(messageId: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CUSTOMER — Get or Create
-// PSID (Facebook User ID) နဲ့ customer ရှာမယ်၊ မရှိရင် အသစ်ဆောက်မယ်
+// CUSTOMER
 // ═══════════════════════════════════════════════════════════════
 async function getOrCreateCustomer(psid: string) {
   try {
@@ -159,53 +138,37 @@ async function getOrCreateCustomer(psid: string) {
 
 // ═══════════════════════════════════════════════════════════════
 // BOT PAUSE CHECK WITH AUTO-RESUME
-// Customer တစ်ယောက်ချင်းစီ အတွက် pause အခြေအနေ စစ်မယ်
-// paused_at ကနေ 30 မိနစ်ကျော်ရင် အလိုလို resume ဖြစ်မယ်
+// ─────────────────────────────────────────────────────────────
+// bot_paused=true + paused_at=NULL    → Dashboard manual pause → true ပြန်
+// bot_paused=true + paused_at=timestamp → 30min မကျော်သေး → true ပြန်
+// bot_paused=true + paused_at=timestamp → 30min ကျော်ပြီ → auto-resume → false ပြန်
 // ═══════════════════════════════════════════════════════════════
 async function isBotPausedForCustomer(customer: any): Promise<boolean> {
-  // bot_paused မဟုတ်ရင် — pause မဟုတ်ဘူး
   if (!customer?.bot_paused) return false;
-
-  // paused_at မရှိရင် — manual pause အဖြစ် ဆက်ရှုမယ် (resume မဖြစ်သေးဘူး)
   if (!customer?.paused_at) return true;
 
-  const pausedAt = new Date(customer.paused_at).getTime();
-  const now = Date.now();
-  const elapsed = now - pausedAt;
-
-  // 30 မိနစ်ကျော်ပြီဆိုရင် auto-resume လုပ်မယ်
+  const elapsed = Date.now() - new Date(customer.paused_at).getTime();
   if (elapsed >= AUTO_RESUME_MS) {
     console.log(`Auto-resuming bot for customer ${customer.id} after 30 minutes`);
-    await supabaseQuery(
-      "customers", "PATCH",
+    await supabaseQuery("customers", "PATCH",
       { bot_paused: false, paused_at: null },
       `id=eq.${customer.id}`
     );
-    return false; // Resume ဖြစ်ပြီ — Bot ဆက်ဖြေနိုင်တယ်
+    return false;
   }
-
-  // 30 မိနစ် မကျော်သေးဘူး — still paused
   return true;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MESSAGE ECHO HANDLER (NEW)
-// Admin က Facebook Messenger App ကနေ ပြန်ဖြေတိုင်း ဒီ function ခေါ်မယ်
-// Echo = Bot ကိုယ်တိုင်ပို့တာမဟုတ်ဘဲ Admin လူကိုယ်တိုင် ဖြေတဲ့ message
-// ─────────────────────────────────────────────────────────────
-// ဘာလုပ်မလဲ:
-//   1. Customer ရှာမယ်
-//   2. conversations table ထဲ admin reply အဖြစ် save မယ်
-//   3. bot_paused = true + paused_at = ယခုအချိန် set မယ်
-//   4. AI response မပြန် (return သာလုပ်မယ်)
+// MESSAGE ECHO HANDLER
+// Admin က Messenger ကနေ ဖြေတိုင်း ဒီ function ခေါ်မယ်
+// → conversations table ထဲ admin message save
+// → bot_paused=true + paused_at=timestamp set
 // ═══════════════════════════════════════════════════════════════
 async function handleMessageEcho(event: any): Promise<void> {
   try {
-    // is_echo = true မဟုတ်ရင် ဒီ function ကို မရောက်သင့်ဘူး — safety check
     if (!event.message?.is_echo) return;
 
-    // Bot ကိုယ်တိုင် ပို့တဲ့ message တွေလည်း echo အဖြစ် ရောက်လာတယ်
-    // recipient.id က Customer PSID ဖြစ်တယ် — ဒါကိုသုံးပြီး customer ရှာမယ်
     const customerPsid = event.recipient?.id;
     if (!customerPsid) return;
 
@@ -214,25 +177,19 @@ async function handleMessageEcho(event: any): Promise<void> {
 
     const adminMessageText = event.message?.text || "[Media or attachment]";
 
-    // Admin reply ကို conversations table ထဲ "admin" type နဲ့ save မယ်
     await supabaseQuery("conversations", "POST", {
       customer_id: customer.id,
-      message_type: "admin",       // "bot" မဟုတ်ဘဲ "admin" သုံးမယ် — Dashboard မှာ ခွဲပြနိုင်အောင်
+      message_type: "admin",
       message_text: adminMessageText,
       metadata: { source: "messenger_echo" },
     });
 
-    // Bot ကို pause လုပ်မယ် + paused_at timestamp သိမ်းမယ် (auto-resume အတွက်)
-    await supabaseQuery(
-      "customers", "PATCH",
-      {
-        bot_paused: true,
-        paused_at: new Date().toISOString(), // ဒီ timestamp ကနေ 30 မိနစ်တွက်မယ်
-      },
+    await supabaseQuery("customers", "PATCH",
+      { bot_paused: true, paused_at: new Date().toISOString() },
       `id=eq.${customer.id}`
     );
 
-    console.log(`Admin replied to customer ${customer.id} via Messenger — bot paused for 30 min`);
+    console.log(`Admin replied to customer ${customer.id} — bot paused 30 min`);
   } catch (e: any) {
     console.error("handleMessageEcho error:", e.message);
   }
@@ -262,7 +219,7 @@ async function saveConversation(customerId: number, messageType: string, message
 }
 
 // ═══════════════════════════════════════════════════════════════
-// PRODUCTS — Active products တွေသာ ယူမယ်
+// PRODUCTS
 // ═══════════════════════════════════════════════════════════════
 async function getProducts() {
   try {
@@ -271,7 +228,7 @@ async function getProducts() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// STOCK DEDUCT — Order confirm တိုင်း stock အရေအတွက် လျော့မယ်
+// STOCK DEDUCT
 // ═══════════════════════════════════════════════════════════════
 async function deductStock(productId: number, quantity: number) {
   try {
@@ -283,7 +240,7 @@ async function deductStock(productId: number, quantity: number) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER — orders table ထဲ သိမ်းမယ်
+// ORDER
 // ═══════════════════════════════════════════════════════════════
 async function saveOrder(orderData: any) {
   try {
@@ -295,8 +252,7 @@ async function saveOrder(orderData: any) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CONTEXT — Customer တစ်ယောက်ချင်းစီရဲ့ order state သိမ်းမယ်
-// collecting_order, pending_product, address စတာတွေ
+// CONTEXT
 // ═══════════════════════════════════════════════════════════════
 async function getContext(customerId: number) {
   if (!customerId) return null;
@@ -324,10 +280,6 @@ async function updateContext(customerId: number, data: any) {
   } catch (e: any) { console.error("updateContext error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PREFERENCES PARSER
-// conversation_context ထဲက preferences field ကို object အဖြစ် parse မယ်
-// ═══════════════════════════════════════════════════════════════
 function parsePreferences(preferences: any) {
   const defaults = {
     address: "",
@@ -355,7 +307,6 @@ function parsePreferences(preferences: any) {
 
 // ═══════════════════════════════════════════════════════════════
 // GENDER DETECTION
-// Customer နာမည်ကနေ AI ခန့်မှန်းပြီး "အကို" / "အမ" ဆုံးဖြတ်မယ်
 // ═══════════════════════════════════════════════════════════════
 async function detectGenderFromName(name: string): Promise<string> {
   if (!name || name.length < 2) return "";
@@ -382,7 +333,7 @@ async function detectGenderFromName(name: string): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND — Customer ဆီ message ပို့မယ်
+// FACEBOOK SEND
 // ═══════════════════════════════════════════════════════════════
 async function sendMessage(recipientId: string, text: string) {
   try {
@@ -399,8 +350,7 @@ async function sendMessage(recipientId: string, text: string) {
 
 // ═══════════════════════════════════════════════════════════════
 // MEDIA SENDER — DISABLED
-// App Review ဖြတ်ပြီး client က URL တွေပေးမှ activate မယ်
-// MEDIA_ENABLED = true ပြောင်းလိုက်ရုံနဲ့ အသက်ဝင်မယ်
+// MEDIA_ENABLED = true ပြောင်းမှ အသက်ဝင်မယ်
 // ═══════════════════════════════════════════════════════════════
 const MEDIA_ENABLED = false;
 
@@ -412,9 +362,7 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
       { recipient: { id: recipientId }, message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: true } } } },
       { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
     );
-  } catch (e: any) {
-    console.error("sendImageMessage error (non-critical):", e?.response?.data || e.message);
-  }
+  } catch (e: any) { console.error("sendImageMessage error:", e?.response?.data || e.message); }
 }
 
 async function sendVideoMessage(recipientId: string, videoUrl: string): Promise<void> {
@@ -425,40 +373,11 @@ async function sendVideoMessage(recipientId: string, videoUrl: string): Promise<
       { recipient: { id: recipientId }, message: { attachment: { type: "video", payload: { url: videoUrl, is_reusable: true } } } },
       { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
     );
-  } catch (e: any) {
-    console.error("sendVideoMessage error (non-critical):", e?.response?.data || e.message);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ORDER DETAILS PARSER
-// Customer message ထဲကနေ နာမည်၊ ဖုန်း၊ လိပ်စာ AI ဖြင့် ဆွဲထုတ်မယ်
-// ═══════════════════════════════════════════════════════════════
-async function parseOrderDetails(messageText: string): Promise<{
-  name: string | null; phone: string | null; address: string | null; quantity: number;
-}> {
-  try {
-    const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "google/gemini-2.5-flash",
-        messages: [{
-          role: "user",
-          content: `Customer message: "${messageText}"\n\nExtract ONLY with valid JSON, no markdown:\n{"name":null,"phone":null,"address":null,"quantity":1}`,
-        }],
-        max_tokens: 150,
-        temperature: 0.1,
-      },
-      { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" }, timeout: 10000 }
-    );
-    const raw = response.data.choices[0]?.message?.content || "{}";
-    return JSON.parse(raw.replace(/```json|```/g, "").trim());
-  } catch { return { name: null, phone: null, address: null, quantity: 1 }; }
+  } catch (e: any) { console.error("sendVideoMessage error:", e?.response?.data || e.message); }
 }
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN AI RESPONSE
-// Customer message ကို AI နဲ့ ဖြေမယ် + Order flow ထိန်းမယ်
 // ═══════════════════════════════════════════════════════════════
 async function generateAIResponse(psid: string, messageText: string): Promise<string> {
   const fallback = "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
@@ -475,7 +394,6 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
 
     const prefs = parsePreferences(context?.preferences);
 
-    // ── First message — ပထမဆုံး customer ဆိုရင် ကြိုဆိုစာ ပြန်မယ် ──
     if (!context?.preferences && history.length === 0) {
       await updateContext(customer.id, {
         preferences: { address: "", collecting_order: false, has_active_order: false },
@@ -486,26 +404,22 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
       return greeting;
     }
 
-    // ── Product list ကို AI ဖို့ format လုပ်မယ် ──
     const productList = products.map((p: any) => {
       const stockStatus = p.stock_quantity > 0 ? "Stock ရှိပါတယ်" : "Stock မရှိ (Pre-order ရနိုင်)";
       return `• ID:${p.id} | ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK | ${stockStatus}${p.description ? `\n  ${p.description}` : ""}`;
     }).join("\n\n");
 
-    // ── Conversation history ကို AI ဖို့ format လုပ်မယ် ──
     const historyMessages = [...history].reverse().map((h: any) => ({
       role: h.message_type === "customer" ? "user" : "assistant",
       content: h.message_text,
     }));
 
-    // ── Customer ကိုဘယ်လိုခေါ်မလဲ rule ──
     const addressRule = prefs.address
       ? `ဖောက်သည်ကို "${prefs.address}" ဟုသာ ခေါ်ပါ။`
       : `ဖောက်သည်ကို နာမ်စားဖြင့် မခေါ်ပါနဲ့။ ယဉ်ကျေးစွာ ဆက်သွယ်ပါ။`;
 
-    // ── Order ကောက်နေတဆဲဆိုရင် AI ကို context ပေးမယ် ──
     const orderContext = prefs.collecting_order
-      ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ ဖြစ်သည် (Product: ${prefs.pending_product || "မသေချာသေး"})။ ဖောက်သည်ထံမှ နာမည်၊ ဖုန်းနံပါတ်၊ လိပ်စာ ရယူနေသည်။`
+      ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။ နာမည်၊ ဖုန်းနံပါတ်၊ လိပ်စာ ရယူနေသည်။`
       : "";
 
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
@@ -527,28 +441,23 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
 
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
-• "start_order" — Customer က ဝယ်ယူလိုသော intent ရှိမှသာ (မှာမယ်၊ ဝယ်မယ်၊ ယူမယ် — တိတိကျကျသော intent)
-• "save_order" — Customer က name + phone + address ၃ ခုစလုံး ပေးပြီးမှသာ
-• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း (တပ်ဆင်ချိန်၊ delivery date၊ အာမခံ)
+• "start_order" — Customer က ဝယ်ယူလိုသော intent ရှိမှသာ
+• "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးမှသာ
+• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း
 
-━━━ Smart Context Handling (MUST) ━━━
+━━━ Smart Context Handling ━━━
 ${orderContext}
-• အော်ဒါ ကောက်နေချိန်မှာ Customer က တစ်ခြားမေးခွန်း ကြားဖြတ်မေးလာရင်:
-  1. အဲ့ဒီ မေးခွန်းကို ဦးစွာ ဖြေပါ
-  2. ပြီးမှ "နာမည်၊ ဖုန်းနံပါတ်နဲ့ လိပ်စာလေး ဆက်ပြောပေးပါနော်" ဆိုပြီး သဘာဝကျကျ ပြန်ဆက်ပါ
-  3. action: "none" ထားပါ (state မပြောင်းဘဲ)
-• Customer က name/phone/address မပါဘဲ တစ်ခြားပြောနေရင် → action: "none"
-• Customer က cancel လိုချင်တဲ့ သဘောထားရှိရင် → collecting_order ရပ်ပြီး action: "none"
+• အော်ဒါ ကောက်နေချိန် ကြားဖြတ်မေးခွန်းရင် → ဖြေပြီးမှ ပြန်ဆက်၊ action: "none"
+• cancel သဘောထားရှိရင် → collecting_order ရပ်၊ action: "none"
 
 ━━━ ဈေးနှုန်း STRICT RULE ━━━
 ⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။
-⚠️ Stock အရေအတွက် (ဘယ်နှလုံး) ဘယ်တော့မှ မပြောရ — "Stock ရှိပါတယ်" / "Pre-order ရနိုင်" သာပြောရ။
+⚠️ Stock အရေအတွက် ဘယ်တော့မှ မပြောရ။
 ⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
 
 ━━━ Products ━━━
 ${productList}`;
 
-    // ── AI Call ──
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -569,7 +478,6 @@ ${productList}`;
 
     const rawContent = response.data.choices[0]?.message?.content || "{}";
 
-    // ── Parse AI JSON response ──
     let aiResponse: any = { reply: fallback, action: "none", order_data: null, collected_data: null };
     try {
       const cleaned = rawContent.replace(/```json|```/g, "").trim();
@@ -582,11 +490,9 @@ ${productList}`;
       aiResponse.reply = rawContent;
     }
 
-    // ── Output Sanitizer ──
     const safeReply = sanitizeReply(aiResponse.reply || fallback);
     const action = aiResponse.action || "none";
 
-    // ── START ORDER — order ကောက်မယ် state on ──
     if (action === "start_order" && aiResponse.order_data) {
       const product = products.find((p: any) => p.id === aiResponse.order_data.product_id)
         || products.find((p: any) => p.name === aiResponse.order_data.product_name)
@@ -604,10 +510,8 @@ ${productList}`;
       });
     }
 
-    // ── SAVE ORDER — နာမည်၊ ဖုန်း၊ လိပ်စာ ၃ ခုစလုံးရပြီ ──
     if (action === "save_order" && aiResponse.collected_data) {
       const { name, phone, address, quantity } = aiResponse.collected_data;
-
       if (name && phone && address) {
         const product = prefs.pending_product
           ? products.find((p: any) =>
@@ -617,7 +521,6 @@ ${productList}`;
 
         const isPreorder = product && product.stock_quantity <= 0;
         const totalPrice = product ? Number(product.price_mmk) * (quantity || 1) : 0;
-
         const detectedGender = await detectGenderFromName(name);
         const finalAddress = detectedGender || prefs.address;
 
@@ -634,8 +537,6 @@ ${productList}`;
 
         if (order) {
           if (product?.id) await deductStock(product.id, quantity || 1);
-
-          const sal = finalAddress ? ` ${finalAddress}` : "";
           const orderLabel = isPreorder ? "(Pre-order)" : "";
 
           await notifyOwnerDashboard(
@@ -664,7 +565,6 @@ ${productList}`;
       }
     }
 
-    // ── NOTIFY OWNER — AI မဖြေနိုင်တဲ့ မေးခွန်း ──
     if (action === "notify_owner") {
       await notifyOwnerDashboard(customer.id, "human_support_needed", "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`);
       await notifyOwnerTelegram(
@@ -672,7 +572,6 @@ ${productList}`;
       );
     }
 
-    // ── Save conversation ──
     await saveConversation(customer.id, "customer", messageText);
     await saveConversation(customer.id, "bot", safeReply);
     return safeReply;
@@ -686,11 +585,9 @@ ${productList}`;
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN WEBHOOK HANDLER
-// Facebook က ပို့တဲ့ event အားလုံး ဒီမှာ ဦးစွာ ရောက်လာမယ်
 // ═══════════════════════════════════════════════════════════════
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
-  // ── GET — Facebook က webhook URL verify လုပ်တဲ့အခါ ──
   if (req.method === "GET") {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
@@ -701,7 +598,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).send("Forbidden");
   }
 
-  // ── POST — Customer / Admin message တွေ ဝင်လာတဲ့အခါ ──
   if (req.method === "POST") {
     const body = req.body;
     if (body.object === "page") {
@@ -716,17 +612,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             tasks.push((async () => {
               try {
-                // ══════════════════════════════════════════════
-                // ECHO CHECK — Admin Messenger reply ဖြစ်ရင် ဒီမှာ ရပ်မယ်
-                // is_echo = true ဆိုတာ Admin က Page ကနေ ပို့တဲ့ message
-                // Bot ကိုယ်တိုင် ပို့တဲ့ message တွေလည်း echo ဖြစ်တယ်
-                // ══════════════════════════════════════════════
+
+                // ── STEP 1: ECHO CHECK (အရင်ဆုံး) ──
+                // Admin က Messenger ကနေ ဖြေတဲ့ message ဖြစ်ရင်
+                // save + pause လုပ်ပြီး ဒီမှာ ရပ်မယ်
                 if (event.message?.is_echo) {
                   await handleMessageEcho(event);
-                  return; // Echo ဖြစ်ရင် AI response မပြန်ဘဲ ဒီမှာ ရပ်မယ်
+                  return;
                 }
 
-                // ── Deduplication check ──
+                // ── STEP 2: DEDUPLICATION ──
                 if (messageId) {
                   if (await isMessageProcessed(messageId)) {
                     console.log(`Skipping duplicate: ${messageId}`);
@@ -735,24 +630,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   await markMessageProcessed(messageId);
                 }
 
-                // ── Customer ရှာမယ် ──
+                // ── STEP 3: CUSTOMER ──
                 const customer = await getOrCreateCustomer(senderId);
 
-                // ── Bot pause check (auto-resume logic ပါတယ်) ──
-                // isBotPausedForCustomer က 30 မိနစ်ကျော်ရင် auto-resume လုပ်ပြီး false ပြန်မယ်
+                // ── STEP 4: BOT PAUSE CHECK ──
+                // Pause ဖြစ်နေရင် (manual ဖြစ်ဖြစ် auto ဖြစ်ဖြစ်)
+                // AI မဖြေဘဲ customer message သာ save မယ်
                 if (await isBotPausedForCustomer(customer)) {
-                  console.log(`Bot paused for customer ${customer.id} — skipping`);
+                  console.log(`Bot paused for customer ${customer.id} — skipping AI, saving message`);
                   if (event.message?.text) {
                     await saveConversation(customer.id, "customer", event.message.text);
                   }
                   return;
                 }
 
-                // ── Text message ဆိုရင် AI ဖြေမယ် ──
+                // ── STEP 5: AI RESPONSE ──
                 if (event.message?.text) {
                   const reply = await generateAIResponse(senderId, event.message.text);
 
-                  // AI ဖြေပြီးနောက် pause ထပ်စစ် — race condition ကာကွယ်မယ်
+                  // Race condition ကာကွယ် — AI ဖြေပြီးနောက် pause ထပ်စစ်
                   const freshCheck = await supabaseQuery("customers", "GET", null, `psid=eq.${senderId}&select=bot_paused`);
                   if (freshCheck?.[0]?.bot_paused) {
                     console.log("Bot paused after AI response — reply discarded");
@@ -761,7 +657,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                   await sendMessage(senderId, reply);
 
-                // ── Text မဟုတ်တဲ့ message (ဓာတ်ပုံ၊ sticker) ──
                 } else if (event.message) {
                   const msgType = Object.keys(event.message)
                     .filter(k => k !== "mid" && k !== "seq").join(", ");

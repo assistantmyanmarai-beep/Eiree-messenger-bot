@@ -138,10 +138,8 @@ async function getOrCreateCustomer(psid: string) {
 
 // ═══════════════════════════════════════════════════════════════
 // BOT PAUSE CHECK WITH AUTO-RESUME
-// ─────────────────────────────────────────────────────────────
-// bot_paused=true + paused_at=NULL    → Dashboard manual pause → true ပြန်
-// bot_paused=true + paused_at=timestamp → 30min မကျော်သေး → true ပြန်
-// bot_paused=true + paused_at=timestamp → 30min ကျော်ပြီ → auto-resume → false ပြန်
+// bot_paused=true + paused_at=NULL    → Dashboard manual pause
+// bot_paused=true + paused_at=time   → Auto pause (30min ကျော်ရင် resume)
 // ═══════════════════════════════════════════════════════════════
 async function isBotPausedForCustomer(customer: any): Promise<boolean> {
   if (!customer?.bot_paused) return false;
@@ -161,9 +159,9 @@ async function isBotPausedForCustomer(customer: any): Promise<boolean> {
 
 // ═══════════════════════════════════════════════════════════════
 // MESSAGE ECHO HANDLER
-// Admin က Messenger ကနေ ဖြေတိုင်း ဒီ function ခေါ်မယ်
-// → conversations table ထဲ admin message save
-// → bot_paused=true + paused_at=timestamp set
+// Admin က Messenger ကနေ ဖြေတိုင်း —
+//   → conversations table ထဲ admin message save
+//   → bot_paused=true + paused_at=timestamp set (30min auto-resume)
 // ═══════════════════════════════════════════════════════════════
 async function handleMessageEcho(event: any): Promise<void> {
   try {
@@ -192,6 +190,33 @@ async function handleMessageEcho(event: any): Promise<void> {
     console.log(`Admin replied to customer ${customer.id} — bot paused 30 min`);
   } catch (e: any) {
     console.error("handleMessageEcho error:", e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AI TRAINING CONFIG FETCH
+// Dashboard မှာ Client ထည့်ထားတဲ့ active instructions တွေ ယူမယ်
+// is_active=true တွေကိုပဲ ယူမယ် — false တွေ ignore လုပ်မယ်
+// ═══════════════════════════════════════════════════════════════
+async function getActiveTrainingInstructions(): Promise<string> {
+  try {
+    const configs = await supabaseQuery(
+      "ai_training_config", "GET", null,
+      "is_active=eq.true&select=system_prompt,content&order=created_at.asc"
+    );
+
+    if (!configs || configs.length === 0) return "";
+
+    // Active instructions တွေကို စုပြီး string အဖြစ် ပြောင်းမယ်
+    const instructions = configs
+      .map((c: any) => c.content || c.system_prompt || "")
+      .filter((text: string) => text.trim().length > 0)
+      .join("\n• ");
+
+    return instructions ? `• ${instructions}` : "";
+  } catch (e: any) {
+    console.error("getActiveTrainingInstructions error:", e.message);
+    return ""; // Error ဖြစ်ရင် empty string — Bot ဆက်အလုပ်လုပ်မယ်
   }
 }
 
@@ -386,10 +411,12 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
     const customer = await getOrCreateCustomer(psid);
     if (!customer?.id) return fallback;
 
-    const [history, products, context] = await Promise.all([
+    // AI Training instructions နဲ့ တခြား data တွေ တပြိုင်တည်း ယူမယ်
+    const [history, products, context, trainingInstructions] = await Promise.all([
       getConversationHistory(customer.id, 20),
       getProducts(),
       getContext(customer.id),
+      getActiveTrainingInstructions(), // ← AI Training inject
     ]);
 
     const prefs = parsePreferences(context?.preferences);
@@ -422,13 +449,19 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
       ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။ နာမည်၊ ဖုန်းနံပါတ်၊ လိပ်စာ ရယူနေသည်။`
       : "";
 
+    // ── AI Training Instructions — Client ထည့်ထားတဲ့ active instructions ──
+    // Dashboard မှာ is_active=true ဖြစ်တဲ့ instructions တွေကိုပဲ ထည့်မယ်
+    const trainingSection = trainingInstructions
+      ? `\n━━━ Client ညွှန်ကြားချက်များ (လိုက်နာရမည်) ━━━\n${trainingInstructions}`
+      : "";
+
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
 ━━━ စကားပြောပုံစံ ━━━
 • ${addressRule} "ရှင့်" မသုံးနဲ့။
 • မိမိကို "ခင်ဗျာ" သုံးပါ။
 • သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
-• Bullet point ကြီးများ ရှောင်ပါ။
+• Bullet point ကြီးများ ရှောင်ပါ။${trainingSection}
 
 ━━━ Response Format ━━━
 သင်သည် အမြဲ JSON format နဲ့ respond ရမည်:
@@ -634,8 +667,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const customer = await getOrCreateCustomer(senderId);
 
                 // ── STEP 4: BOT PAUSE CHECK ──
-                // Pause ဖြစ်နေရင် (manual ဖြစ်ဖြစ် auto ဖြစ်ဖြစ်)
-                // AI မဖြေဘဲ customer message သာ save မယ်
+                // Pause ဖြစ်နေရင် AI မဖြေဘဲ customer message သာ save မယ်
+                // Manual pause (paused_at=NULL) နဲ့ Auto pause နှစ်မျိုးလုံး handle လုပ်တယ်
                 if (await isBotPausedForCustomer(customer)) {
                   console.log(`Bot paused for customer ${customer.id} — skipping AI, saving message`);
                   if (event.message?.text) {
@@ -658,6 +691,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   await sendMessage(senderId, reply);
 
                 } else if (event.message) {
+                  // Text မဟုတ်တဲ့ message (ဓာတ်ပုံ၊ sticker)
                   const msgType = Object.keys(event.message)
                     .filter(k => k !== "mid" && k !== "seq").join(", ");
                   const reply = "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";

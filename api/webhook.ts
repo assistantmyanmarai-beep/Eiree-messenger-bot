@@ -742,6 +742,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 // isBotPausedForCustomer က 30 မိနစ်ကျော်ရင် auto-resume လုပ်ပြီး false ပြန်မယ်
                 if (await isBotPausedForCustomer(customer)) {
                   console.log(`Bot paused for customer ${customer.id} — skipping`);
+                  if (event.message?.text) {
+                    await saveConversation(customer.id, "customer", event.message.text);
+                  }
                   return;
                 }
 

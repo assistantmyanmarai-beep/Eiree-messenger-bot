@@ -457,8 +457,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
     }
 
     const productList = products.map((p: any) => {
-      const stockStatus = p.stock_quantity > 0 ? "Stock ရှိပါတယ်" : "Stock မရှိ (Pre-order ရနိုင်)";
-      return `• ID:${p.id} | ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK | ${stockStatus}${p.description ? `\n  ${p.description}` : ""}`;
+      return `• ID:${p.id} | ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK${p.description ? `\n  ${p.description}` : ""}${p.filter_stages ? `\n  Filter: ${p.filter_stages}` : ""}${p.filter_precision ? ` | ${p.filter_precision}` : ""}`;
     }).join("\n\n");
 
     const historyMessages = [...history].reverse().map((h: any) => ({
@@ -511,9 +510,11 @@ ${orderContext}
 
 ━━━ ဈေးနှုန်း STRICT RULE ━━━
 ⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။
-⚠️ Stock အရေအတွက် ဘယ်တော့မှ မပြောရ — "Stock ရှိပါတယ်" / "Pre-order ရနိုင်" သာပြောရ။
+⚠️ Stock အကြောင်း လုံးဝမပြောရ — ရှိတယ်ဖြစ်ဖြစ် မရှိဘူးဖြစ်ဖြစ် Customer ကို မပြောရ။
+⚠️ Order ကောက်ပြီးမှသာ system က stock စစ်မယ် — Bot မသိချင်သလိုနေပါ။
+⚠️ Product ဖြေတဲ့အခါ ဈေးနှုန်း၊ spec တွေကို သဘာဝကျကျ နွေးထွေးစွာ ပြောပါ။ List တွေ bullet တွေ မသုံးဘဲ စကားပြောသလို ဖြေပါ။
 ⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
-
+⚠️ Product တစ်ခုအကြောင်း ဖြေတဲ့အခါ — ဈေးနှုန်း၊ filter stage၊ precision တွေကို သဘာဝကျကျ စကားပြောသလို ဖြေပါ။ Emoji လေးနဲ့ နွေးထွေးစွာ ပြောပြီး နောက်ဆုံးမှာ "ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ 👇" လို့ သဘာဝကျကျ ထည့်ပြောပါ။ ဒါပေမယ့် ဒါကို အမြဲတမ်းမဟုတ်ဘဲ ပုံပို့မည့်အခါမှသာ ပြောပါ။
 ━━━ Products ━━━
 ${productList}`;
 

@@ -20,6 +20,12 @@ const OWNER_TELEGRAM_CHAT_ID = process.env.OWNER_TELEGRAM_CHAT_ID;
 const AUTO_RESUME_MS = 30 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════
+// MEDIA ENABLED — ပုံပို့မည့် feature
+// true = Bot က product ဖြေတဲ့အခါ ပုံပါ တစ်ပါတည်းပို့မယ်
+// ═══════════════════════════════════════════════════════════════
+const MEDIA_ENABLED = true;
+
+// ═══════════════════════════════════════════════════════════════
 // OUTPUT SANITIZER
 // ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
@@ -194,33 +200,6 @@ async function handleMessageEcho(event: any): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// AI TRAINING CONFIG FETCH
-// Dashboard မှာ Client ထည့်ထားတဲ့ active instructions တွေ ယူမယ်
-// is_active=true တွေကိုပဲ ယူမယ် — false တွေ ignore လုပ်မယ်
-// ═══════════════════════════════════════════════════════════════
-async function getActiveTrainingInstructions(): Promise<string> {
-  try {
-    const configs = await supabaseQuery(
-      "ai_training_config", "GET", null,
-      "is_active=eq.true&select=system_prompt,content&order=created_at.asc"
-    );
-
-    if (!configs || configs.length === 0) return "";
-
-    // Active instructions တွေကို စုပြီး string အဖြစ် ပြောင်းမယ်
-    const instructions = configs
-      .map((c: any) => c.content || c.system_prompt || "")
-      .filter((text: string) => text.trim().length > 0)
-      .join("\n• ");
-
-    return instructions ? `• ${instructions}` : "";
-  } catch (e: any) {
-    console.error("getActiveTrainingInstructions error:", e.message);
-    return ""; // Error ဖြစ်ရင် empty string — Bot ဆက်အလုပ်လုပ်မယ်
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
 // CONVERSATION
 // ═══════════════════════════════════════════════════════════════
 async function getConversationHistory(customerId: number, limit = 20) {
@@ -331,6 +310,28 @@ function parsePreferences(preferences: any) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// AI TRAINING CONFIG FETCH
+// is_active=true တွေကိုပဲ ယူမယ်
+// ═══════════════════════════════════════════════════════════════
+async function getActiveTrainingInstructions(): Promise<string> {
+  try {
+    const configs = await supabaseQuery(
+      "ai_training_config", "GET", null,
+      "is_active=eq.true&select=system_prompt,content&order=created_at.asc"
+    );
+    if (!configs || configs.length === 0) return "";
+    const instructions = configs
+      .map((c: any) => c.content || c.system_prompt || "")
+      .filter((text: string) => text.trim().length > 0)
+      .join("\n• ");
+    return instructions ? `• ${instructions}` : "";
+  } catch (e: any) {
+    console.error("getActiveTrainingInstructions error:", e.message);
+    return "";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // GENDER DETECTION
 // ═══════════════════════════════════════════════════════════════
 async function detectGenderFromName(name: string): Promise<string> {
@@ -358,7 +359,7 @@ async function detectGenderFromName(name: string): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND
+// FACEBOOK SEND — Text message
 // ═══════════════════════════════════════════════════════════════
 async function sendMessage(recipientId: string, text: string) {
   try {
@@ -374,49 +375,67 @@ async function sendMessage(recipientId: string, text: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MEDIA SENDER — DISABLED
-// MEDIA_ENABLED = true ပြောင်းမှ အသက်ဝင်မယ်
+// FACEBOOK SEND — Image message
+// Product ဖြေတဲ့အခါ ပုံပါ တစ်ပါတည်းပို့မယ်
+// MEDIA_ENABLED = true မှသာ အလုပ်လုပ်မယ်
 // ═══════════════════════════════════════════════════════════════
-const MEDIA_ENABLED = false;
-
 async function sendImageMessage(recipientId: string, imageUrl: string): Promise<void> {
   if (!MEDIA_ENABLED || !imageUrl?.trim()) return;
   try {
     await axios.post(
       `https://graph.facebook.com/v18.0/me/messages`,
-      { recipient: { id: recipientId }, message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: true } } } },
+      {
+        recipient: { id: recipientId },
+        message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: true } } }
+      },
       { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
     );
-  } catch (e: any) { console.error("sendImageMessage error:", e?.response?.data || e.message); }
+    console.log(`Image sent to ${recipientId}: ${imageUrl}`);
+  } catch (e: any) {
+    console.error("sendImageMessage error (non-critical):", e?.response?.data || e.message);
+  }
 }
 
-async function sendVideoMessage(recipientId: string, videoUrl: string): Promise<void> {
-  if (!MEDIA_ENABLED || !videoUrl?.trim()) return;
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/me/messages`,
-      { recipient: { id: recipientId }, message: { attachment: { type: "video", payload: { url: videoUrl, is_reusable: true } } } },
-      { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
-    );
-  } catch (e: any) { console.error("sendVideoMessage error:", e?.response?.data || e.message); }
+// ═══════════════════════════════════════════════════════════════
+// SEND PRODUCT IMAGES
+// Product တစ်ခုအတွက် ပုံ ၁ ပုံ သို့မဟုတ် ၂ ပုံ ပို့မယ်
+// image_url = main photo, image_url2 = spec/detail photo
+// ═══════════════════════════════════════════════════════════════
+async function sendProductImages(recipientId: string, product: any): Promise<void> {
+  if (!MEDIA_ENABLED) return;
+  if (!product) return;
+
+  // Main photo ပို့မယ်
+  if (product.image_url) {
+    await sendImageMessage(recipientId, product.image_url);
+  }
+
+  // Spec/detail photo ရှိရင် ထပ်ပို့မယ်
+  if (product.image_url2) {
+    // နည်းနည်း delay ပေးမယ် — Messenger မှာ order မမှားအောင်
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await sendImageMessage(recipientId, product.image_url2);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN AI RESPONSE
 // ═══════════════════════════════════════════════════════════════
-async function generateAIResponse(psid: string, messageText: string): Promise<string> {
+async function generateAIResponse(psid: string, messageText: string): Promise<{
+  reply: string;
+  productToShow: any | null;
+}> {
   const fallback = "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 
   try {
     const customer = await getOrCreateCustomer(psid);
-    if (!customer?.id) return fallback;
+    if (!customer?.id) return { reply: fallback, productToShow: null };
 
-    // AI Training instructions နဲ့ တခြား data တွေ တပြိုင်တည်း ယူမယ်
     const [history, products, context, trainingInstructions] = await Promise.all([
       getConversationHistory(customer.id, 20),
       getProducts(),
       getContext(customer.id),
-      getActiveTrainingInstructions(), // ← AI Training inject
+      getActiveTrainingInstructions(),
     ]);
 
     const prefs = parsePreferences(context?.preferences);
@@ -428,7 +447,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
       const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
       await saveConversation(customer.id, "customer", messageText);
       await saveConversation(customer.id, "bot", greeting);
-      return greeting;
+      return { reply: greeting, productToShow: null };
     }
 
     const productList = products.map((p: any) => {
@@ -449,8 +468,6 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
       ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။ နာမည်၊ ဖုန်းနံပါတ်၊ လိပ်စာ ရယူနေသည်။`
       : "";
 
-    // ── AI Training Instructions — Client ထည့်ထားတဲ့ active instructions ──
-    // Dashboard မှာ is_active=true ဖြစ်တဲ့ instructions တွေကိုပဲ ထည့်မယ်
     const trainingSection = trainingInstructions
       ? `\n━━━ Client ညွှန်ကြားချက်များ (လိုက်နာရမည်) ━━━\n${trainingInstructions}`
       : "";
@@ -467,13 +484,16 @@ async function generateAIResponse(psid: string, messageText: string): Promise<st
 သင်သည် အမြဲ JSON format နဲ့ respond ရမည်:
 {
   "reply": "Customer ဆီပို့မယ့် message",
-  "action": "none" | "start_order" | "save_order" | "notify_owner",
+  "action": "none" | "start_order" | "save_order" | "notify_owner" | "show_product",
+  "product_id": null | number,
   "order_data": null | { "product_id": number, "product_name": string, "is_preorder": boolean },
   "collected_data": null | { "name": string, "phone": string, "address": string, "quantity": number }
 }
 
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
+• "show_product" — Customer က product တစ်ခုအကြောင်း တိတိကျကျ မေးတဲ့အခါ (ဈေးနှုန်း၊ spec၊ ဓာတ်ပုံကြည့်ချင်တယ်)
+  → product_id ထည့်ပေးပါ (ဘယ် product ရဲ့ ပုံပို့မလဲ)
 • "start_order" — Customer က ဝယ်ယူလိုသော intent ရှိမှသာ
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးမှသာ
 • "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း
@@ -485,7 +505,7 @@ ${orderContext}
 
 ━━━ ဈေးနှုန်း STRICT RULE ━━━
 ⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။
-⚠️ Stock အရေအတွက် ဘယ်တော့မှ မပြောရ။
+⚠️ Stock အရေအတွက် ဘယ်တော့မှ မပြောရ — "Stock ရှိပါတယ်" / "Pre-order ရနိုင်" သာပြောရ။
 ⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
 
 ━━━ Products ━━━
@@ -511,7 +531,7 @@ ${productList}`;
 
     const rawContent = response.data.choices[0]?.message?.content || "{}";
 
-    let aiResponse: any = { reply: fallback, action: "none", order_data: null, collected_data: null };
+    let aiResponse: any = { reply: fallback, action: "none", product_id: null, order_data: null, collected_data: null };
     try {
       const cleaned = rawContent.replace(/```json|```/g, "").trim();
       if (cleaned.startsWith("{")) {
@@ -526,6 +546,13 @@ ${productList}`;
     const safeReply = sanitizeReply(aiResponse.reply || fallback);
     const action = aiResponse.action || "none";
 
+    // ── SHOW PRODUCT — ပုံပို့မည့် product ရှာမယ် ──
+    let productToShow: any = null;
+    if (action === "show_product" && aiResponse.product_id) {
+      productToShow = products.find((p: any) => p.id === aiResponse.product_id) || null;
+    }
+
+    // ── START ORDER ──
     if (action === "start_order" && aiResponse.order_data) {
       const product = products.find((p: any) => p.id === aiResponse.order_data.product_id)
         || products.find((p: any) => p.name === aiResponse.order_data.product_name)
@@ -543,6 +570,7 @@ ${productList}`;
       });
     }
 
+    // ── SAVE ORDER ──
     if (action === "save_order" && aiResponse.collected_data) {
       const { name, phone, address, quantity } = aiResponse.collected_data;
       if (name && phone && address) {
@@ -598,6 +626,7 @@ ${productList}`;
       }
     }
 
+    // ── NOTIFY OWNER ──
     if (action === "notify_owner") {
       await notifyOwnerDashboard(customer.id, "human_support_needed", "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`);
       await notifyOwnerTelegram(
@@ -607,12 +636,12 @@ ${productList}`;
 
     await saveConversation(customer.id, "customer", messageText);
     await saveConversation(customer.id, "bot", safeReply);
-    return safeReply;
+    return { reply: safeReply, productToShow };
 
   } catch (error: any) {
     console.error("generateAIResponse error:", error);
     await notifySystemError(`generateAIResponse: ${error.message}`);
-    return fallback;
+    return { reply: fallback, productToShow: null };
   }
 }
 
@@ -647,8 +676,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               try {
 
                 // ── STEP 1: ECHO CHECK (အရင်ဆုံး) ──
-                // Admin က Messenger ကနေ ဖြေတဲ့ message ဖြစ်ရင်
-                // save + pause လုပ်ပြီး ဒီမှာ ရပ်မယ်
                 if (event.message?.is_echo) {
                   await handleMessageEcho(event);
                   return;
@@ -667,8 +694,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const customer = await getOrCreateCustomer(senderId);
 
                 // ── STEP 4: BOT PAUSE CHECK ──
-                // Pause ဖြစ်နေရင် AI မဖြေဘဲ customer message သာ save မယ်
-                // Manual pause (paused_at=NULL) နဲ့ Auto pause နှစ်မျိုးလုံး handle လုပ်တယ်
                 if (await isBotPausedForCustomer(customer)) {
                   console.log(`Bot paused for customer ${customer.id} — skipping AI, saving message`);
                   if (event.message?.text) {
@@ -679,19 +704,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                 // ── STEP 5: AI RESPONSE ──
                 if (event.message?.text) {
-                  const reply = await generateAIResponse(senderId, event.message.text);
+                  const { reply, productToShow } = await generateAIResponse(senderId, event.message.text);
 
-                  // Race condition ကာကွယ် — AI ဖြေပြီးနောက် pause ထပ်စစ်
+                  // Race condition ကာကွယ်
                   const freshCheck = await supabaseQuery("customers", "GET", null, `psid=eq.${senderId}&select=bot_paused`);
                   if (freshCheck?.[0]?.bot_paused) {
                     console.log("Bot paused after AI response — reply discarded");
                     return;
                   }
 
+                  // Text reply ပို့မယ်
                   await sendMessage(senderId, reply);
 
+                  // Product ပုံ ရှိရင် ထပ်ပို့မယ် (text ပြီးမှ)
+                  if (productToShow) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    await sendProductImages(senderId, productToShow);
+                  }
+
                 } else if (event.message) {
-                  // Text မဟုတ်တဲ့ message (ဓာတ်ပုံ၊ sticker)
+                  // Text မဟုတ်တဲ့ message
                   const msgType = Object.keys(event.message)
                     .filter(k => k !== "mid" && k !== "seq").join(", ");
                   const reply = "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";

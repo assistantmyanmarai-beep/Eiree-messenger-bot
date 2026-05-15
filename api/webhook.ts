@@ -392,7 +392,13 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
     );
     console.log(`Image sent to ${recipientId}: ${imageUrl}`);
   } catch (e: any) {
-    console.error("sendImageMessage error (non-critical):", e?.response?.data || e.message);
+    console.error("sendImageMessage error:", e?.response?.data || e.message);
+await notifyOwnerTelegram(
+  `⚠️ *ပုံပို့၍ မရဘဲ error ဖြစ်နေပါတယ်*\n\n` +
+  `📎 URL: ${imageUrl}\n` +
+  `❌ Error: ${e?.response?.data?.error?.message || e.message}\n\n` +
+  `👉 Customer ဆီ ပုံကိုယ်တိုင် ပို့ပေးပါ`
+);
   }
 }
 
@@ -492,7 +498,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
-• "show_product" — Customer က product တစ်ခုအကြောင်း တိတိကျကျ မေးတဲ့အခါ (ဈေးနှုန်း၊ spec၊ ဓာတ်ပုံကြည့်ချင်တယ်)
+"show_product" — Customer က product တစ်ခုတည်းအကြောင်း focus ပြီး မေးတဲ့အခါ၊ ပုံကြည့်ချင်တဲ့သဘော ရှိတဲ့အခါ၊ ဘယ်လိုပုံစံလဲ/ဘယ်လိုစမျိုးလဲ မေးတဲ့အခါ၊ product တစ်ခုရဲ့ spec တိတိကျကျ သိချင်တဲ့အခါ — Customer က ပုံဆိုသောစကား မပါရင်တောင် product တစ်ခုကိုသာ focus ပြီး မေးနေရင် show_product သုံးပါ
   → product_id ထည့်ပေးပါ (ဘယ် product ရဲ့ ပုံပို့မလဲ)
 • "start_order" — Customer က ဝယ်ယူလိုသော intent ရှိမှသာ
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးမှသာ

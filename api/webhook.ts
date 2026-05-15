@@ -45,7 +45,7 @@ function sanitizeReply(text: string): string {
     .replace(/\[.*?ဖြည့်ပါ.*?\]/g, "")
     .replace(/\[COMMAND:.*?\]/g, "")
     .replace(/\[ACTION:.*?\]/g, "")
-    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\{\"reply\".*\}/gs, "")  // JSON leak ကာကွယ်
     .trim();
   return cleaned || "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 }
@@ -386,7 +386,7 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
       `https://graph.facebook.com/v18.0/me/messages`,
       {
         recipient: { id: recipientId },
-        message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: true } } }
+        message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: false  // ← ဒီလိုပြောင်း } } }
       },
       { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
     );

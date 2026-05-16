@@ -27,12 +27,11 @@ function sanitizeTelegramText(text: string): string {
 
 // ═══════════════════════════════════════════════════════════════
 // OUTPUT SANITIZER
-// FIX: \n \t escape sequence တွေ real newline/tab အဖြစ် ပြောင်းမယ်
 // ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
   let cleaned = text
-    // FIX: escape sequences ကို real characters အဖြစ် ပြောင်းမယ်
+    // FIX: \n escape sequence ကို real newline အဖြစ် ပြောင်းမယ်
     .replace(/\\n/g, "\n")
     .replace(/\\t/g, " ")
     // JSON တွေ ဖယ်မယ်
@@ -40,7 +39,7 @@ function sanitizeReply(text: string): string {
     .replace(/\{[\s\S]*?"reply"[\s\S]*?\}/g, "")
     .replace(/```json[\s\S]*?```/gi, "")
     .replace(/```[\s\S]*?```/gi, "")
-    .replace(/"(reply|action|product_id|order_data|collected_data)":\s*(?:"[^"]*"|\{[^}]*\}|\[[^\]]*\]|null|true|false|\d+),?\s*/gi, "")
+    .replace(/"(reply|action|product_id|product_ids|order_data|collected_data)":\s*(?:"[^"]*"|\{[^}]*\}|\[[^\]]*\]|null|true|false|\d+),?\s*/gi, "")
     .replace(/^\s*[{}[\]]\s*$/gm, "")
     // Internal flag တွေ ဖယ်မယ်
     .replace(/NEED_FOLLOW_UP:\[.*?\]/gs, "")
@@ -58,6 +57,11 @@ function sanitizeReply(text: string): string {
     .replace(/\[.*?ဖြည့်ပါ.*?\]/g, "")
     .replace(/\[COMMAND:.*?\]/g, "")
     .replace(/\[ACTION:.*?\]/g, "")
+    // FIX: ပုံပို့မည်ဆိုတဲ့ hint phrase တွေ ဖယ်မယ်
+    // AI က show_product action မပါဘဲ ဒါတွေ reply ထဲ ထည့်ရင် မှားတယ်
+    .replace(/ပုံလေးပါ\s*တစ်ပါတည်းကြည့်နိုင်ပါတယ်[^၊။\n]*/g, "")
+    .replace(/တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ\s*👇/g, "")
+    .replace(/👇/g, "")
     // Markdown တွေ ဖယ်မယ်
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/\*(.*?)\*/g, "$1")
@@ -238,9 +242,7 @@ function findProductFromHistory(history: any[], products: any[]): any {
     .map((h: any) => h.message_text || "")
     .join(" ");
   for (const product of products) {
-    if (botMessages.includes(product.name)) {
-      return product;
-    }
+    if (botMessages.includes(product.name)) return product;
   }
   return null;
 }
@@ -417,19 +419,38 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
 }
 
 // ═══════════════════════════════════════════════════════════════
-// SEND PRODUCT IMAGES
-// FIX: product တစ်ခုတည်းဆိုမှ ပုံပို့မယ်
-// product အများကြီး compare လုပ်တဲ့ conversation မှာ ပုံမပို့ဘဲ
-// customer တစ်ခု select လုပ်မှ show_product ဖြစ်မယ်
+// SEND SINGLE PRODUCT IMAGES
 // ═══════════════════════════════════════════════════════════════
 async function sendProductImages(recipientId: string, product: any): Promise<void> {
   if (!MEDIA_ENABLED || !product) return;
-  if (product.image_url) {
-    await sendImageMessage(recipientId, product.image_url);
-  }
+  if (product.image_url) await sendImageMessage(recipientId, product.image_url);
   if (product.image_url2) {
     await new Promise(resolve => setTimeout(resolve, 500));
     await sendImageMessage(recipientId, product.image_url2);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SEND MULTIPLE PRODUCT IMAGES
+// Customer က "အကုန်ပြပါ" / "သုံးမျိုးလုံး ပြပါ" ပြောတဲ့အခါ
+// Product တစ်ခုချင်းစီ နာမည်+ဈေး text ပို့ပြီး ပုံလိုက်ပို့မယ်
+// ═══════════════════════════════════════════════════════════════
+async function sendMultipleProductImages(recipientId: string, productList: any[]): Promise<void> {
+  if (!MEDIA_ENABLED || !productList?.length) return;
+  for (const product of productList) {
+    // နာမည်နဲ့ ဈေးနှုန်း text အရင်ပို့မယ်
+    await sendMessage(recipientId,
+      `${product.name}\n${Number(product.price_mmk).toLocaleString()} ကျပ်`
+    );
+    await new Promise(resolve => setTimeout(resolve, 300));
+    // ပုံ ပို့မယ်
+    if (product.image_url) await sendImageMessage(recipientId, product.image_url);
+    if (product.image_url2) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await sendImageMessage(recipientId, product.image_url2);
+    }
+    // Product တစ်ခုနဲ့တစ်ခု ကြား နည်းနည်း gap ပေးမယ်
+    await new Promise(resolve => setTimeout(resolve, 800));
   }
 }
 
@@ -439,12 +460,13 @@ async function sendProductImages(recipientId: string, product: any): Promise<voi
 async function generateAIResponse(psid: string, messageText: string): Promise<{
   reply: string;
   productToShow: any | null;
+  productsToShow: any[];
 }> {
   const fallback = "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 
   try {
     const customer = await getOrCreateCustomer(psid);
-    if (!customer?.id) return { reply: fallback, productToShow: null };
+    if (!customer?.id) return { reply: fallback, productToShow: null, productsToShow: [] };
 
     const [history, products, context, trainingInstructions] = await Promise.all([
       getConversationHistory(customer.id, 20),
@@ -463,7 +485,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
       await saveConversation(customer.id, "customer", messageText);
       await saveConversation(customer.id, "bot", greeting);
-      return { reply: greeting, productToShow: null };
+      return { reply: greeting, productToShow: null, productsToShow: [] };
     }
 
     const productList = products.map((p: any) =>
@@ -501,31 +523,36 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • မိမိကို "ခင်ဗျာ" သုံးပါ။
 • သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
 • Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
-• \\n \\t ကဲ့သို့ escape sequence တွေ reply ထဲ လုံးဝမထည့်ရ။ Real newline ကိုသာ သုံးပါ။${trainingSection}
+• \\n \\t escape sequence တွေ reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
 
 ━━━ Response Format ━━━
 အမြဲ JSON format နဲ့ respond ရမည်။
 "reply" field ထဲမှာ Customer ဆီပို့မယ့် plain text သာ ထည့်ပါ။
-JSON structure၊ { } bracket တွေ "reply" ထဲ လုံးဝမထည့်ရ။
 
 {
   "reply": "Customer ဆီပို့မယ့် plain Myanmar text",
-  "action": "none",
-  "product_id": null,
-  "order_data": null,
-  "collected_data": null
+  "action": "none" | "show_product" | "show_products" | "start_order" | "save_order" | "notify_owner",
+  "product_id": null | number,
+  "product_ids": null | [number, number, ...],
+  "order_data": null | { "product_id": number, "product_name": string },
+  "collected_data": null | { "name": string, "phone": string, "address": string, "quantity": number }
 }
 
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
-• "show_product" — Customer က product တစ်ခုတည်းကို တိတိကျကျ ရွေးချယ်ပြီး ကြည့်ချင်တဲ့အခါသာ သုံးပါ
-  ⚠️ Product အများကြီး compare လုပ်နေချိန်မှာ show_product မသုံးရ
-  ⚠️ Customer က တစ်ခုတည်း ရွေးချယ်ပြီးမှသာ show_product သုံးပြီး product_id ထည့်ပေးပါ
+• "show_product" — Customer က product တစ်ခုတည်း ကြည့်ချင်တဲ့အခါ
+  → product_id ထည့်ပေးပါ
+  ⚠️ reply ထဲမှာ "ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ် 👇" မထည့်ရ
+  Code က အလိုအလျောက် ပုံပို့ပေးမည်
+• "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်တဲ့အခါ
+  → product_ids: [id1, id2, id3] array ထည့်ပေးပါ
+  ⚠️ reply ထဲမှာ ပုံပို့မည်ဆိုတဲ့ hint မထည့်ရ
+  Code က တစ်ခုချင်းစီ နာမည်+ဈေး+ပုံ အလိုအလျောက် ပို့ပေးမည်
 • "start_order" — Customer က ဝယ်ယူမယ်ဆိုသောအခါ ချက်ချင်းသုံးပါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order action ပါ တစ်ပါတည်းထွက်ရမည်
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးမှသာ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
-• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း၊ delivery date မေးတာ၊ warranty မေးတာ
+• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း၊ delivery date၊ warranty
 
 ━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
@@ -535,8 +562,8 @@ ${orderContext}${activeOrderWarning}
 ⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
 ⚠️ Stock အကြောင်း လုံးဝမပြောရ။
 ⚠️ "reply" ထဲမှာ placeholder text မထည့်ရ — "ဈေးနှုန်းဖြည့်ပါ" မျိုး လုံးဝမထည့်ရ။
-⚠️ ပုံပို့မည့်အခါမှသာ "ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ 👇" ထည့်ပါ။
-⚠️ Product compare လုပ်နေချိန်တွင် ပုံမပို့ရ — Customer တစ်ခုတည်း ရွေးချယ်မှသာ ပုံပို့ပါ။
+⚠️ ပုံပို့မည်ဆိုသော hint ("ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ် 👇") ကို reply ထဲ လုံးဝမထည့်ရ။
+   show_product သို့မဟုတ် show_products action သာ သုံးပါ။ Code က ပုံပို့ပေးမည်။
 
 ━━━ Products ━━━
 ${productList}`;
@@ -561,11 +588,11 @@ ${productList}`;
 
     const rawContent = response.data.choices[0]?.message?.content || "{}";
 
-    // ── AI Response Parser ──
     let aiResponse: any = {
       reply: fallback,
       action: "none",
       product_id: null,
+      product_ids: null,
       order_data: null,
       collected_data: null,
     };
@@ -594,11 +621,19 @@ ${productList}`;
     const safeReply = sanitizeReply(aiResponse.reply || fallback);
     const action = aiResponse.action || "none";
 
-    // ── SHOW PRODUCT ──
-    // FIX: product_id ရှိမှသာ ပုံပို့မယ် — compare လုပ်နေချိန် မပို့ဘဲနေမယ်
+    // ── SHOW SINGLE PRODUCT ──
     let productToShow: any = null;
     if (action === "show_product" && aiResponse.product_id) {
       productToShow = products.find((p: any) => p.id === aiResponse.product_id) || null;
+    }
+
+    // ── SHOW MULTIPLE PRODUCTS ──
+    // Customer "အကုန်ပြပါ" / "သုံးမျိုးလုံးပြပါ" ဆိုရင်
+    let productsToShow: any[] = [];
+    if (action === "show_products" && aiResponse.product_ids?.length > 0) {
+      productsToShow = aiResponse.product_ids
+        .map((id: number) => products.find((p: any) => p.id === id))
+        .filter(Boolean);
     }
 
     // ── START ORDER ──
@@ -622,7 +657,6 @@ ${productList}`;
     }
 
     // ── CODE-LEVEL SAFETY NET ──
-    // AI က start_order မထုတ်ဘဲ info တောင်းတဲ့ reply ထုတ်ရင် force set လုပ်မယ်
     if (action === "none" && !prefs.collecting_order && !prefs.has_active_order) {
       const askingForInfo = safeReply.includes("နာမည်") &&
         (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));
@@ -656,10 +690,6 @@ ${productList}`;
               p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
             ) : null) ||
             (aiResponse.order_data?.product_id ? products.find((p: any) => p.id === aiResponse.order_data.product_id) : null) ||
-            (aiResponse.order_data?.product_name ? products.find((p: any) =>
-              p.name === aiResponse.order_data.product_name ||
-              p.name.toLowerCase().includes((aiResponse.order_data.product_name || "").toLowerCase())
-            ) : null) ||
             findProductFromHistory(history, products) ||
             null;
 
@@ -669,7 +699,7 @@ ${productList}`;
               `Customer: ${sanitizeTelegramText(name)}\n` +
               `Phone: ${sanitizeTelegramText(phone)}\n` +
               `Address: ${sanitizeTelegramText(address)}\n` +
-              `Product ပြောတာ: ${sanitizeTelegramText(prefs.pending_product || "မပြောဘဲ")}\n\n` +
+              `🔑 Customer ID: ${psid}\n\n` +
               `Dashboard မှာ စစ်ပြီး manual order ဖန်တီးပေးပါ`
             );
             await notifyOwnerDashboard(customer.id, "human_support_needed",
@@ -739,12 +769,12 @@ ${productList}`;
 
     await saveConversation(customer.id, "customer", messageText);
     await saveConversation(customer.id, "bot", safeReply);
-    return { reply: safeReply, productToShow };
+    return { reply: safeReply, productToShow, productsToShow };
 
   } catch (error: any) {
     console.error("generateAIResponse error:", error);
     await notifySystemError(`generateAIResponse: ${error.message}`);
-    return { reply: fallback, productToShow: null };
+    return { reply: fallback, productToShow: null, productsToShow: [] };
   }
 }
 
@@ -853,16 +883,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
 
                 if (event.message?.text) {
-                  const { reply, productToShow } = await generateAIResponse(senderId, event.message.text);
+                  const { reply, productToShow, productsToShow } = await generateAIResponse(senderId, event.message.text);
 
                   const freshCheck = await supabaseQuery("customers", "GET", null, `psid=eq.${senderId}&select=bot_paused`);
                   if (freshCheck?.[0]?.bot_paused) return;
 
+                  // Text reply ပို့မယ်
                   await sendMessage(senderId, reply);
 
+                  // Single product ပုံ ပို့မယ်
                   if (productToShow) {
                     await new Promise(resolve => setTimeout(resolve, 300));
                     await sendProductImages(senderId, productToShow);
+                  }
+
+                  // Multiple products ပုံ တစ်ခုချင်းစီ ပို့မယ်
+                  if (productsToShow.length > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    await sendMultipleProductImages(senderId, productsToShow);
                   }
 
                 } else if (event.message) {

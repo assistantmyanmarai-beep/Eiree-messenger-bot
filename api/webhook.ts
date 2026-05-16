@@ -19,7 +19,6 @@ const MEDIA_ENABLED = true;
 
 // ═══════════════════════════════════════════════════════════════
 // TELEGRAM TEXT SANITIZER
-// Customer နာမည်/လိပ်စာထဲ * _ ` တွေပါရင် Telegram error ဖြစ်မယ်
 // ═══════════════════════════════════════════════════════════════
 function sanitizeTelegramText(text: string): string {
   if (!text) return "";
@@ -28,26 +27,16 @@ function sanitizeTelegramText(text: string): string {
 
 // ═══════════════════════════════════════════════════════════════
 // OUTPUT SANITIZER
-// AI reply ထဲမှာ JSON / markdown / placeholder တွေ ဖယ်မယ်
 // ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
-
   let cleaned = text
-    // ── JSON တွေ ဖယ်မယ် ──
-    // { နဲ့ စတဲ့ JSON block တစ်ခုလုံး ဖယ်မယ်
     .replace(/^\s*\{[\s\S]*\}\s*$/gm, "")
-    // reply field ထဲမှာ JSON ပါနေရင် ဖယ်မယ်
     .replace(/\{[\s\S]*?"reply"[\s\S]*?\}/g, "")
-    // markdown code block ထဲ JSON ဖယ်မယ်
     .replace(/```json[\s\S]*?```/gi, "")
     .replace(/```[\s\S]*?```/gi, "")
-    // JSON key-value တွေ ဖယ်မယ်
     .replace(/"(reply|action|product_id|order_data|collected_data)":\s*(?:"[^"]*"|\{[^}]*\}|\[[^\]]*\]|null|true|false|\d+),?\s*/gi, "")
-    // { } [ ] bracket တွေ ဖယ်မယ်
     .replace(/^\s*[{}[\]]\s*$/gm, "")
-
-    // ── Internal flag တွေ ဖယ်မယ် ──
     .replace(/NEED_FOLLOW_UP:\[.*?\]/gs, "")
     .replace(/NEED_FOLLOW_UP:[^\n]*/g, "")
     .replace(/PRICE_UNCERTAIN:[^\n]*/g, "")
@@ -58,24 +47,17 @@ function sanitizeReply(text: string): string {
     .replace(/ORDER_COLLECTING/g, "")
     .replace(/ORDER_COMPLETE:\{.*?\}/gs, "")
     .replace(/NOTIFY_OWNER:[^\n]*/g, "")
-
-    // ── Placeholder text တွေ ဖယ်မယ် ──
     .replace(/ဈေးနှုန်းဖြည့်ပါ/g, "")
     .replace(/\[.*?ဖြည့်ပါ.*?\]/g, "")
     .replace(/\[COMMAND:.*?\]/g, "")
     .replace(/\[ACTION:.*?\]/g, "")
-
-    // ── Markdown တွေ ဖယ်မယ် — Messenger မှာ render မဖြစ်တာတွေ ──
-    .replace(/\*\*(.*?)\*\*/g, "$1")   // **bold** → bold
-    .replace(/\*(.*?)\*/g, "$1")       // *italic* → italic
-    .replace(/^[\*\-]\s+/gm, "")      // * bullet / - bullet ဖယ်မယ်
-    .replace(/^\d+\.\s+/gm, "")       // 1. 2. 3. ဖယ်မယ်
-    .replace(/#{1,6}\s/g, "")         // # heading ဖယ်မယ်
-
-    // ── Whitespace သန့်ရှင်းမယ် ──
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/^[\*\-]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/#{1,6}\s/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-
   return cleaned || "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 }
 
@@ -121,7 +103,6 @@ async function notifyOwnerTelegram(msg: string) {
     await axios.post(`https://api.telegram.org/bot${OWNER_TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: OWNER_TELEGRAM_CHAT_ID,
       text: msg,
-      // parse_mode မသုံး — Customer နာမည်ထဲ special char ပါရင် error မဖြစ်အောင်
     });
   } catch (e: any) { console.error("Owner Telegram error:", e.message); }
 }
@@ -241,10 +222,27 @@ async function getProducts() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PRODUCT FINDER FROM HISTORY
+// Bot ရဲ့ conversation history ကနေ ပြောဖူးတဲ့ product ရှာမယ်
+// ═══════════════════════════════════════════════════════════════
+function findProductFromHistory(history: any[], products: any[]): any {
+  const botMessages = history
+    .filter((h: any) => h.message_type === "bot")
+    .map((h: any) => h.message_text || "")
+    .join(" ");
+  for (const product of products) {
+    if (botMessages.includes(product.name)) {
+      return product;
+    }
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // STOCK MANAGEMENT
-// Order save → stock မနှုတ်သေး
-// Dashboard Confirmed → stock နှုတ်မယ်
-// Dashboard Cancelled → stock ပြန်ထည့်မယ် (confirmed ဖြစ်ခဲ့ရင်သာ)
+// Order save → stock မနှုတ်သေး (pending status)
+// Dashboard Confirmed → deductStock
+// Dashboard Cancelled (was_confirmed) → restoreStock
 // ═══════════════════════════════════════════════════════════════
 async function deductStock(productId: number, quantity: number) {
   try {
@@ -311,7 +309,6 @@ function parsePreferences(preferences: any) {
     collecting_order: false,
     pending_product: null as string | null,
     pending_product_id: null as number | null,
-    pending_order: null as any,
     has_active_order: false,
   };
   if (!preferences) return defaults;
@@ -326,7 +323,6 @@ function parsePreferences(preferences: any) {
       collecting_order: p.collecting_order || false,
       pending_product: p.pending_product || null,
       pending_product_id: p.pending_product_id || null,
-      pending_order: p.pending_order || null,
       has_active_order: p.has_active_order || false,
     };
   } catch { return defaults; }
@@ -408,7 +404,7 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
   } catch (e: any) {
     console.error("sendImageMessage error:", e?.response?.data || e.message);
     await notifyOwnerTelegram(
-      `⚠️ ပုံပို့၍ မရဘဲ error ဖြစ်နေပါတယ်\n\nURL: ${imageUrl}\nError: ${e?.response?.data?.error?.message || e.message}\n\nCustomer ဆီ ပုံကိုယ်တိုင် ပို့ပေးပါ`
+      `⚠️ ပုံပို့၍ မရဘဲ error ဖြစ်နေပါတယ်\nURL: ${imageUrl}\nError: ${e?.response?.data?.error?.message || e.message}\nCustomer ဆီ ပုံကိုယ်တိုင် ပို့ပေးပါ`
     );
   }
 }
@@ -455,12 +451,12 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       return { reply: greeting, productToShow: null };
     }
 
-    const productList = products.map((p: any) => {
-      return `• ID:${p.id} | ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK` +
-        (p.description ? `\n  ${p.description}` : "") +
-        (p.filter_stages ? `\n  Filter: ${p.filter_stages}` : "") +
-        (p.filter_precision ? ` | ${p.filter_precision}` : "");
-    }).join("\n\n");
+    const productList = products.map((p: any) =>
+      `• ID:${p.id} | ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK` +
+      (p.description ? `\n  ${p.description}` : "") +
+      (p.filter_stages ? `\n  Filter: ${p.filter_stages}` : "") +
+      (p.filter_precision ? ` | ${p.filter_precision}` : "")
+    ).join("\n\n");
 
     const historyMessages = [...history].reverse().map((h: any) => ({
       role: h.message_type === "customer" ? "user" : "assistant",
@@ -476,7 +472,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       : "";
 
     const activeOrderWarning = prefs.has_active_order
-      ? `\n\n🔒 CRITICAL: ဤ Customer ၏ အော်ဒါ submit ပြီးသားဖြစ်သည်။ "ဟုတ်ကဲ့"၊ "အိုကေ"၊ "ကောင်းပြီ" ကဲ့သို့ confirm စကားများကို အော်ဒါအသစ်အဖြစ် လုံးဝမသတ်မှတ်ရ။ action="save_order" ကို လုံးဝမသုံးရ။`
+      ? `\n\n🔒 CRITICAL: ဤ Customer ၏ အော်ဒါ submit ပြီးသားဖြစ်သည်။ "ဟုတ်ကဲ့"၊ "အိုကေ" ကဲ့သို့ confirm စကားများကို အော်ဒါအသစ်အဖြစ် လုံးဝမသတ်မှတ်ရ။ action="save_order" ကို လုံးဝမသုံးရ။`
       : "";
 
     const trainingSection = trainingInstructions
@@ -489,15 +485,15 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • ${addressRule} "ရှင့်" မသုံးနဲ့။
 • မိမိကို "ခင်ဗျာ" သုံးပါ။
 • သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
-• Markdown မသုံးရ — ** * # ကဲ့သို့ formatting လုံးဝမသုံးရ။ Plain text သာသုံးပါ။${trainingSection}
+• Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။${trainingSection}
 
-━━━ Response Format (အရေးကြီးဆုံး) ━━━
-သင်သည် အမြဲ JSON format နဲ့ respond ရမည်။
+━━━ Response Format ━━━
+အမြဲ JSON format နဲ့ respond ရမည်။
 "reply" field ထဲမှာ Customer ဆီပို့မယ့် plain text သာ ထည့်ပါ။
-JSON structure၊ field name တွေ၊ { } bracket တွေကို "reply" ထဲ လုံးဝမထည့်ရ။
+JSON structure၊ { } bracket တွေ "reply" ထဲ လုံးဝမထည့်ရ။
 
 {
-  "reply": "ဒီနေရာမှာ Customer ဆီပို့မယ့် plain Myanmar text သာထည့်ပါ",
+  "reply": "Customer ဆီပို့မယ့် plain Myanmar text",
   "action": "none",
   "product_id": null,
   "order_data": null,
@@ -507,10 +503,12 @@ JSON structure၊ field name တွေ၊ { } bracket တွေကို "reply"
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
 • "show_product" — Customer က product တစ်ခုကို focus ပြီး မေးတဲ့အခါ (product_id ထည့်ပေးပါ)
-• "start_order" — Customer က ဝယ်ယူလိုသော intent ရှိမှသာ
+• "start_order" — Customer က ဝယ်ယူမယ်ဆိုသောအခါ ချက်ချင်းသုံးပါ
+  ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order action ပါ တစ်ပါတည်းထွက်ရမည်
+  ⚠️ start_order မထုတ်ဘဲ info တောင်းတဲ့ reply ထုတ်ခြင်း လုံးဝမလုပ်ရ
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးမှသာ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
-  ⚠️ "ဟုတ်ကဲ့"၊ "အိုကေ"၊ "ကောင်းပြီ" ကို order အသစ်အဖြစ် မသတ်မှတ်ရ
+  ⚠️ "ဟုတ်ကဲ့"၊ "အိုကေ" ကို order အသစ်အဖြစ် မသတ်မှတ်ရ
 • "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း သို့မဟုတ် မသေချာသော ဈေးနှုန်း
 
 ━━━ Context ━━━
@@ -518,10 +516,10 @@ ${orderContext}${activeOrderWarning}
 
 ━━━ ဈေးနှုန်း Rules ━━━
 ⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။
-⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner" — Customer ဆီ မပြောဘဲ owner ကိုသာ ပို့ပါ။
+⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
 ⚠️ Stock အကြောင်း လုံးဝမပြောရ။
-⚠️ "reply" field ထဲမှာ placeholder text မထည့်ရ — "ဈေးနှုန်းဖြည့်ပါ"၊ "[ဖြည့်ပါ]" မျိုး လုံးဝမထည့်ရ။
-⚠️ Product ဖြေတဲ့အခါ ပုံပို့မည်ဆိုမှသာ "ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ 👇" ထည့်ပါ။
+⚠️ "reply" ထဲမှာ placeholder text မထည့်ရ — "ဈေးနှုန်းဖြည့်ပါ" မျိုး လုံးဝမထည့်ရ။
+⚠️ ပုံပို့မည့်အခါမှသာ "ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ 👇" ထည့်ပါ။
 
 ━━━ Products ━━━
 ${productList}`;
@@ -546,9 +544,7 @@ ${productList}`;
 
     const rawContent = response.data.choices[0]?.message?.content || "{}";
 
-    // ═══════════════════════════════════════════════════════════════
-    // AI RESPONSE PARSER
-    // ═══════════════════════════════════════════════════════════════
+    // ── AI Response Parser ──
     let aiResponse: any = {
       reply: fallback,
       action: "none",
@@ -558,7 +554,6 @@ ${productList}`;
     };
 
     try {
-      // ① markdown fence နဲ့ "json" prefix ဖယ်မယ်
       const stripped = rawContent
         .replace(/^```json\s*/i, "")
         .replace(/^```\s*/i, "")
@@ -566,10 +561,8 @@ ${productList}`;
         .trim();
 
       if (stripped.startsWith("{")) {
-        // ② တိုက်ရိုက် JSON
         aiResponse = JSON.parse(stripped);
       } else {
-        // ③ { ပါနေတဲ့ နေရာကို ရှာမယ်
         const jsonStart = stripped.indexOf("{");
         if (jsonStart !== -1) {
           aiResponse = JSON.parse(stripped.slice(jsonStart));
@@ -578,11 +571,9 @@ ${productList}`;
         }
       }
     } catch {
-      // ④ Parse မရရင် raw text sanitize လုပ်မယ်
       aiResponse.reply = sanitizeReply(rawContent);
     }
 
-    // reply field ထဲမှာ JSON ပါနေသေးရင် ဖယ်မယ်
     const safeReply = sanitizeReply(aiResponse.reply || fallback);
     const action = aiResponse.action || "none";
 
@@ -593,13 +584,14 @@ ${productList}`;
     }
 
     // ── START ORDER ──
+    // AI က start_order action ထုတ်တဲ့အခါ context update လုပ်မယ်
     if (action === "start_order" && aiResponse.order_data) {
       const product =
         products.find((p: any) => p.id === aiResponse.order_data.product_id) ||
         products.find((p: any) => p.name === aiResponse.order_data.product_name) ||
         products.find((p: any) =>
           aiResponse.order_data.product_name?.toLowerCase().includes(p.name.toLowerCase())
-        ) || null;
+        ) || findProductFromHistory(history, products) || null;
 
       await updateContext(customer.id, {
         preferences: {
@@ -612,6 +604,30 @@ ${productList}`;
       });
     }
 
+    // ── CODE-LEVEL SAFETY NET ──
+    // AI က start_order action မထုတ်ဘဲ info တောင်းတဲ့ reply ထုတ်သွားရင်
+    // code ဘက်ကနေ collecting_order: true force set လုပ်မယ်
+    // ဒါမှ customer က data ပေးလိုက်တဲ့အခါ save_order ဖြစ်နိုင်မယ်
+    if (action === "none" && !prefs.collecting_order && !prefs.has_active_order) {
+      const askingForInfo = safeReply.includes("နာမည်") &&
+        (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));
+      if (askingForInfo) {
+        const productFromHistory = findProductFromHistory(history, products);
+        if (productFromHistory) {
+          console.log(`Force setting collecting_order=true for customer ${customer.id}`);
+          await updateContext(customer.id, {
+            preferences: {
+              address: prefs.address,
+              collecting_order: true,
+              pending_product: productFromHistory.name,
+              pending_product_id: productFromHistory.id,
+              has_active_order: false,
+            },
+          });
+        }
+      }
+    }
+
     // ── SAVE ORDER ──
     if (action === "save_order" && aiResponse.collected_data) {
       if (prefs.has_active_order) {
@@ -619,16 +635,23 @@ ${productList}`;
       } else {
         const { name, phone, address, quantity } = aiResponse.collected_data;
         if (name && phone && address) {
-          const product = prefs.pending_product_id
-            ? products.find((p: any) => p.id === prefs.pending_product_id)
-            : prefs.pending_product
-            ? products.find((p: any) =>
-                p.name === prefs.pending_product ||
-                p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
-              )
-            : null;
+          // Product ရှာမယ် — အဆင့်အလိုက်
+          const product =
+            (prefs.pending_product_id ? products.find((p: any) => p.id === prefs.pending_product_id) : null) ||
+            (prefs.pending_product ? products.find((p: any) =>
+              p.name === prefs.pending_product ||
+              p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
+            ) : null) ||
+            (aiResponse.order_data?.product_id ? products.find((p: any) => p.id === aiResponse.order_data.product_id) : null) ||
+            (aiResponse.order_data?.product_name ? products.find((p: any) =>
+              p.name === aiResponse.order_data.product_name ||
+              p.name.toLowerCase().includes((aiResponse.order_data.product_name || "").toLowerCase())
+            ) : null) ||
+            findProductFromHistory(history, products) ||
+            null;
 
           if (!product) {
+            console.log(`Product not found for customer ${customer.id} — notifying owner`);
             await notifyOwnerTelegram(
               `⚠️ Order တစ်ခု product မရှင်းသေးဘဲ ဝင်လာတယ်\n\n` +
               `Customer: ${sanitizeTelegramText(name)}\n` +
@@ -655,7 +678,6 @@ ${productList}`;
               delivery_address: address,
               quantity: quantity || 1,
               total_price_mmk: totalPrice,
-              // Stock ဒီမှာ မနှုတ်ဘဲ Dashboard Confirmed မှ နှုတ်မယ်
               status: isPreorder ? "preorder" : "pending",
             });
 
@@ -713,8 +735,7 @@ ${productList}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER CONFIRM — Dashboard မှာ Confirmed နှိပ်တဲ့အခါ
-// Stock နှုတ်မယ် + has_active_order reset
+// ORDER CONFIRM — Dashboard Confirmed နှိပ်တဲ့အခါ
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
@@ -737,8 +758,7 @@ async function handleOrderConfirm(body: any): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER CANCEL — Dashboard မှာ Cancelled နှိပ်တဲ့အခါ
-// Confirmed ဖြစ်ခဲ့ရင်သာ stock ပြန်ထည့် + has_active_order reset
+// ORDER CANCEL — Dashboard Cancelled နှိပ်တဲ့အခါ
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderCancel(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity, was_confirmed } = body;
@@ -778,7 +798,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "POST") {
     const body = req.body;
 
-    // ── Dashboard Order Actions ──
     if (req.query.action === "confirm-order") {
       await handleOrderConfirm(body);
       return res.status(200).json({ success: true });
@@ -788,7 +807,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true });
     }
 
-    // ── Facebook Messenger Webhook ──
     if (body.object === "page") {
       try {
         const tasks: Promise<void>[] = [];

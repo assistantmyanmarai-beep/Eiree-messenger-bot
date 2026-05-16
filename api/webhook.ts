@@ -520,7 +520,12 @@ ${orderContext}${activeOrderWarning}
 ⚠️ Stock အကြောင်း လုံးဝမပြောရ။
 ⚠️ "reply" ထဲမှာ placeholder text မထည့်ရ — "ဈေးနှုန်းဖြည့်ပါ" မျိုး လုံးဝမထည့်ရ။
 ⚠️ ပုံပို့မည့်အခါမှသာ "ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ 👇" ထည့်ပါ။
-
+⚠️ Customer မေးတာကို AI နားမလည်ရင် သို့မဟုတ် မဖြေနိုင်ရင် →
+   reply မှာ "ဟုတ်ကဲ့ပါခင်ဗျာ၊ ခဏလေး စောင့်ပေးပါဦးနော်၊ 
+   ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည်ဆက်သွယ်ပေးပါ့မယ်ခင်ဗျာ 🙏" 
+   လို့ ယဉ်ကျေးစွာ ပြောပြီး action: "notify_owner" သုံးပါ။
+⚠️ Delivery date၊ တပ်ဆင်ရက်၊ ပို့ဆောင်ချိန် မေးတာ → action: "notify_owner"
+⚠️ Warranty၊ after-sales service မေးတာ → action: "notify_owner"
 ━━━ Products ━━━
 ${productList}`;
 

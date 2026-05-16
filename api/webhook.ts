@@ -386,19 +386,19 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
       `https://graph.facebook.com/v18.0/me/messages`,
       {
         recipient: { id: recipientId },
-        message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: false  // ← ဒီလိုပြောင်း } } }
+        message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: false } } }
       },
       { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
     );
     console.log(`Image sent to ${recipientId}: ${imageUrl}`);
   } catch (e: any) {
     console.error("sendImageMessage error:", e?.response?.data || e.message);
-await notifyOwnerTelegram(
-  `⚠️ *ပုံပို့၍ မရဘဲ error ဖြစ်နေပါတယ်*\n\n` +
-  `📎 URL: ${imageUrl}\n` +
-  `❌ Error: ${e?.response?.data?.error?.message || e.message}\n\n` +
-  `👉 Customer ဆီ ပုံကိုယ်တိုင် ပို့ပေးပါ`
-);
+    await notifyOwnerTelegram(
+      `⚠️ *ပုံပို့၍ မရဘဲ error ဖြစ်နေပါတယ်*\n\n` +
+      `📎 URL: ${imageUrl}\n` +
+      `❌ Error: ${e?.response?.data?.error?.message || e.message}\n\n` +
+      `👉 Customer ဆီ ပုံကိုယ်တိုင် ပို့ပေးပါ`
+    );
   }
 }
 
@@ -538,16 +538,38 @@ ${productList}`;
 
     const rawContent = response.data.choices[0]?.message?.content || "{}";
 
+    // ═══════════════════════════════════════════════════════════════
+    // AI RESPONSE PARSER — JSON Leak Fix
+    // ပြဿနာ: AI က တခါတလေ "json\n{...}" လို့ ပြန်တယ်
+    // "json" ဆိုတဲ့ prefix ကြောင့် startsWith("{") က false ဖြစ်သွားပြီး
+    // JSON တစ်ခုလုံး customer ဆီ ရောက်သွားတယ်
+    // Fix: ရှေ့မှာ ဘာပဲပါပါ trim လုပ်ပြီး { နဲ့ စတဲ့နေရာကို ရှာမယ်
+    // ═══════════════════════════════════════════════════════════════
     let aiResponse: any = { reply: fallback, action: "none", product_id: null, order_data: null, collected_data: null };
     try {
-      const cleaned = rawContent.replace(/```json|```/g, "").trim();
-      if (cleaned.startsWith("{")) {
-        aiResponse = JSON.parse(cleaned);
+      // ① markdown fence နဲ့ "json" prefix တွေ အကုန်ဖယ်မယ်
+      const stripped = rawContent
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/i, "")
+        .replace(/```\s*$/i, "")
+        .trim();
+
+      // ② { နဲ့ စတဲ့ JSON ဆိုရင် parse လုပ်မယ်
+      if (stripped.startsWith("{")) {
+        aiResponse = JSON.parse(stripped);
       } else {
-        aiResponse.reply = cleaned;
+        // ③ "json" ဆိုတဲ့ word ပါလာပြီး နောက်မှာ { ရှိရင် ထုတ်မယ်
+        const jsonStart = stripped.indexOf("{");
+        if (jsonStart !== -1) {
+          aiResponse = JSON.parse(stripped.slice(jsonStart));
+        } else {
+          // ④ JSON မဟုတ်ဘဲ plain text ဆိုရင် reply အဖြစ် သုံးမယ်
+          aiResponse.reply = stripped;
+        }
       }
     } catch {
-      aiResponse.reply = rawContent;
+      // ⑤ Parse မရဘဲ error ဖြစ်ရင် raw text ကို sanitize လုပ်ပြီး သုံးမယ်
+      aiResponse.reply = sanitizeReply(rawContent);
     }
 
     const safeReply = sanitizeReply(aiResponse.reply || fallback);

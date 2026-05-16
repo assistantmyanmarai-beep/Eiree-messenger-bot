@@ -14,16 +14,12 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const OWNER_TELEGRAM_BOT_TOKEN = process.env.OWNER_TELEGRAM_BOT_TOKEN;
 const OWNER_TELEGRAM_CHAT_ID = process.env.OWNER_TELEGRAM_CHAT_ID;
 
-// ═══════════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════════
-const AUTO_RESUME_MS = 30 * 60 * 1000; // Bot auto-resume after 30 min
-const MEDIA_ENABLED = true;            // Product image sending feature
+const AUTO_RESUME_MS = 30 * 60 * 1000;
+const MEDIA_ENABLED = true;
 
 // ═══════════════════════════════════════════════════════════════
 // TELEGRAM TEXT SANITIZER
-// Telegram Markdown မှာ special character တွေပါရင် notification
-// error ဖြစ်နိုင်တယ် — Customer နာမည်/လိပ်စာထဲက * _ ` [ ] တွေ ဖယ်မယ်
+// Customer နာမည်/လိပ်စာထဲ * _ ` တွေပါရင် Telegram error ဖြစ်မယ်
 // ═══════════════════════════════════════════════════════════════
 function sanitizeTelegramText(text: string): string {
   if (!text) return "";
@@ -32,16 +28,26 @@ function sanitizeTelegramText(text: string): string {
 
 // ═══════════════════════════════════════════════════════════════
 // OUTPUT SANITIZER
-// AI reply ထဲမှာ JSON / placeholder text တွေ ပါလာရင် ဖယ်မယ်
+// AI reply ထဲမှာ JSON / markdown / placeholder တွေ ဖယ်မယ်
 // ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
+
   let cleaned = text
-    // JSON structure တွေ ဖယ်မယ်
+    // ── JSON တွေ ဖယ်မယ် ──
+    // { နဲ့ စတဲ့ JSON block တစ်ခုလုံး ဖယ်မယ်
+    .replace(/^\s*\{[\s\S]*\}\s*$/gm, "")
+    // reply field ထဲမှာ JSON ပါနေရင် ဖယ်မယ်
+    .replace(/\{[\s\S]*?"reply"[\s\S]*?\}/g, "")
+    // markdown code block ထဲ JSON ဖယ်မယ်
     .replace(/```json[\s\S]*?```/gi, "")
     .replace(/```[\s\S]*?```/gi, "")
-    .replace(/\{[\s\S]*?"reply"[\s\S]*?\}/g, "")
-    // Internal command/flag တွေ ဖယ်မယ်
+    // JSON key-value တွေ ဖယ်မယ်
+    .replace(/"(reply|action|product_id|order_data|collected_data)":\s*(?:"[^"]*"|\{[^}]*\}|\[[^\]]*\]|null|true|false|\d+),?\s*/gi, "")
+    // { } [ ] bracket တွေ ဖယ်မယ်
+    .replace(/^\s*[{}[\]]\s*$/gm, "")
+
+    // ── Internal flag တွေ ဖယ်မယ် ──
     .replace(/NEED_FOLLOW_UP:\[.*?\]/gs, "")
     .replace(/NEED_FOLLOW_UP:[^\n]*/g, "")
     .replace(/PRICE_UNCERTAIN:[^\n]*/g, "")
@@ -52,24 +58,31 @@ function sanitizeReply(text: string): string {
     .replace(/ORDER_COLLECTING/g, "")
     .replace(/ORDER_COMPLETE:\{.*?\}/gs, "")
     .replace(/NOTIFY_OWNER:[^\n]*/g, "")
-    // Placeholder text တွေ ဖယ်မယ် — Customer မြင်မသင့်တာတွေ
+
+    // ── Placeholder text တွေ ဖယ်မယ် ──
     .replace(/ဈေးနှုန်းဖြည့်ပါ/g, "")
     .replace(/\[.*?ဖြည့်ပါ.*?\]/g, "")
     .replace(/\[COMMAND:.*?\]/g, "")
     .replace(/\[ACTION:.*?\]/g, "")
+
+    // ── Markdown တွေ ဖယ်မယ် — Messenger မှာ render မဖြစ်တာတွေ ──
+    .replace(/\*\*(.*?)\*\*/g, "$1")   // **bold** → bold
+    .replace(/\*(.*?)\*/g, "$1")       // *italic* → italic
+    .replace(/^[\*\-]\s+/gm, "")      // * bullet / - bullet ဖယ်မယ်
+    .replace(/^\d+\.\s+/gm, "")       // 1. 2. 3. ဖယ်မယ်
+    .replace(/#{1,6}\s/g, "")         // # heading ဖယ်မယ်
+
+    // ── Whitespace သန့်ရှင်းမယ် ──
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
+
   return cleaned || "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 }
 
 // ═══════════════════════════════════════════════════════════════
 // SUPABASE HELPER
 // ═══════════════════════════════════════════════════════════════
-async function supabaseQuery(
-  table: string,
-  method: string,
-  body?: any,
-  query?: string
-) {
+async function supabaseQuery(table: string, method: string, body?: any, query?: string) {
   const url = `${SUPABASE_URL}/rest/v1/${table}${query ? `?${query}` : ""}`;
   const headers: any = {
     apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -84,9 +97,7 @@ async function supabaseQuery(
     if (method === "DELETE") return (await axios.delete(url, { headers })).data;
   } catch (error: any) {
     console.error(`Supabase ${method} ${table} error:`, error?.response?.data || error.message);
-    await notifySystemError(
-      `Supabase Error (${method} ${table}): ${JSON.stringify(error?.response?.data || error.message)}`
-    );
+    await notifySystemError(`Supabase Error (${method} ${table}): ${JSON.stringify(error?.response?.data || error.message)}`);
     return null;
   }
 }
@@ -99,12 +110,9 @@ async function notifySystemError(msg: string) {
   try {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: TELEGRAM_CHAT_ID,
-      text: `🔴 System Error\n\n${msg}`,
-      // parse_mode မသုံးဘဲ plain text ပို့မယ် — error ထဲမှာ special char ပါတတ်လို့
+      text: `System Error\n\n${msg}`,
     });
-  } catch (e: any) {
-    console.error("System Telegram error:", e.message);
-  }
+  } catch (e: any) { console.error("System Telegram error:", e.message); }
 }
 
 async function notifyOwnerTelegram(msg: string) {
@@ -113,21 +121,12 @@ async function notifyOwnerTelegram(msg: string) {
     await axios.post(`https://api.telegram.org/bot${OWNER_TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: OWNER_TELEGRAM_CHAT_ID,
       text: msg,
-      // FIX: parse_mode မသုံးတော့ဘူး — Customer နာမည်ထဲ * _ ` တွေပါရင်
-      // Telegram error ဖြစ်ပြီး notification ပျောက်သွားတတ်လို့
+      // parse_mode မသုံး — Customer နာမည်ထဲ special char ပါရင် error မဖြစ်အောင်
     });
-  } catch (e: any) {
-    console.error("Owner Telegram error:", e.message);
-  }
+  } catch (e: any) { console.error("Owner Telegram error:", e.message); }
 }
 
-async function notifyOwnerDashboard(
-  customerId: number,
-  type: string,
-  title: string,
-  content: string,
-  orderId: number | null = null
-) {
+async function notifyOwnerDashboard(customerId: number, type: string, title: string, content: string, orderId: number | null = null) {
   if (!customerId) return;
   try {
     await supabaseQuery("owner_notifications", "POST", {
@@ -137,33 +136,23 @@ async function notifyOwnerDashboard(
       title,
       content,
     });
-  } catch (e: any) {
-    console.error("Dashboard notify error:", e);
-  }
+  } catch (e: any) { console.error("Dashboard notify error:", e); }
 }
 
 // ═══════════════════════════════════════════════════════════════
 // DEDUPLICATION
-// Message ID တူတာ ထပ်မဆောင်ရွက်ရ
 // ═══════════════════════════════════════════════════════════════
 async function isMessageProcessed(messageId: string): Promise<boolean> {
   try {
-    const result = await supabaseQuery(
-      "processed_messages", "GET", null,
-      `message_id=eq.${messageId}&select=message_id`
-    );
+    const result = await supabaseQuery("processed_messages", "GET", null, `message_id=eq.${messageId}&select=message_id`);
     return result && result.length > 0;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 async function markMessageProcessed(messageId: string) {
   try {
     await supabaseQuery("processed_messages", "POST", { message_id: messageId });
-  } catch (e: any) {
-    console.error("Mark processed error:", e);
-  }
+  } catch (e: any) { console.error("Mark processed error:", e); }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -183,21 +172,13 @@ async function getOrCreateCustomer(psid: string) {
 
 // ═══════════════════════════════════════════════════════════════
 // BOT PAUSE CHECK WITH AUTO-RESUME
-// bot_paused=true + paused_at=NULL  → Manual pause (indefinite)
-// bot_paused=true + paused_at=time → Auto pause (30min ကျော်ရင် resume)
 // ═══════════════════════════════════════════════════════════════
 async function isBotPausedForCustomer(customer: any): Promise<boolean> {
   if (!customer?.bot_paused) return false;
   if (!customer?.paused_at) return true;
-
   const elapsed = Date.now() - new Date(customer.paused_at).getTime();
   if (elapsed >= AUTO_RESUME_MS) {
-    console.log(`Auto-resuming bot for customer ${customer.id} after 30 minutes`);
-    await supabaseQuery(
-      "customers", "PATCH",
-      { bot_paused: false, paused_at: null },
-      `id=eq.${customer.id}`
-    );
+    await supabaseQuery("customers", "PATCH", { bot_paused: false, paused_at: null }, `id=eq.${customer.id}`);
     return false;
   }
   return true;
@@ -205,39 +186,26 @@ async function isBotPausedForCustomer(customer: any): Promise<boolean> {
 
 // ═══════════════════════════════════════════════════════════════
 // MESSAGE ECHO HANDLER
-// Admin က Messenger ကနေ ဖြေတိုင်း —
-//   → conversations table ထဲ admin message save
-//   → bot_paused=true + paused_at=now (30min auto-resume)
 // ═══════════════════════════════════════════════════════════════
 async function handleMessageEcho(event: any): Promise<void> {
   try {
     if (!event.message?.is_echo) return;
-
     const customerPsid = event.recipient?.id;
     if (!customerPsid) return;
-
     const customer = await getOrCreateCustomer(customerPsid);
     if (!customer?.id) return;
-
     const adminMessageText = event.message?.text || "[Media or attachment]";
-
     await supabaseQuery("conversations", "POST", {
       customer_id: customer.id,
       message_type: "admin",
       message_text: adminMessageText,
       metadata: { source: "messenger_echo" },
     });
-
-    await supabaseQuery(
-      "customers", "PATCH",
+    await supabaseQuery("customers", "PATCH",
       { bot_paused: true, paused_at: new Date().toISOString() },
       `id=eq.${customer.id}`
     );
-
-    console.log(`Admin replied to customer ${customer.id} — bot paused 30 min`);
-  } catch (e: any) {
-    console.error("handleMessageEcho error:", e.message);
-  }
+  } catch (e: any) { console.error("handleMessageEcho error:", e.message); }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -246,22 +214,12 @@ async function handleMessageEcho(event: any): Promise<void> {
 async function getConversationHistory(customerId: number, limit = 20) {
   if (!customerId) return [];
   try {
-    return (
-      await supabaseQuery(
-        "conversations", "GET", null,
-        `customer_id=eq.${customerId}&select=*&order=created_at.desc&limit=${limit}`
-      )
-    ) || [];
-  } catch {
-    return [];
-  }
+    return (await supabaseQuery("conversations", "GET", null,
+      `customer_id=eq.${customerId}&select=*&order=created_at.desc&limit=${limit}`)) || [];
+  } catch { return []; }
 }
 
-async function saveConversation(
-  customerId: number,
-  messageType: string,
-  messageText: string
-) {
+async function saveConversation(customerId: number, messageType: string, messageText: string) {
   if (!customerId) return;
   try {
     await supabaseQuery("conversations", "POST", {
@@ -270,9 +228,7 @@ async function saveConversation(
       message_text: messageText,
       metadata: {},
     });
-  } catch (e: any) {
-    console.error("saveConversation error:", e);
-  }
+  } catch (e: any) { console.error("saveConversation error:", e); }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -280,60 +236,32 @@ async function saveConversation(
 // ═══════════════════════════════════════════════════════════════
 async function getProducts() {
   try {
-    return (
-      await supabaseQuery("products", "GET", null, "is_active=eq.true&select=*")
-    ) || [];
-  } catch {
-    return [];
-  }
+    return (await supabaseQuery("products", "GET", null, "is_active=eq.true&select=*")) || [];
+  } catch { return []; }
 }
 
 // ═══════════════════════════════════════════════════════════════
 // STOCK MANAGEMENT
-//
-// လက်ရှိ Logic (မူရင်း — မှားသည်):
-//   Order save → ချက်ချင်း stock နှုတ်တယ်
-//   Cancel ဖြစ်ရင် stock ပြန်မထည့်ဘူး
-//
-// ပြင်ဆင်ပြီး Logic (ဒီ version):
-//   Order save → stock မနှုတ်သေးဘဲ "reserved" အဖြစ် သဘောထားမယ်
-//   Dashboard မှာ Confirmed နှိပ် → webhook ကို API call လုပ်မယ် → stock နှုတ်မယ်
-//   Dashboard မှာ Cancelled နှိပ် → stock ပြန်ထည့်မယ်
-//   has_active_order → confirmed/cancelled နှစ်ခုစလုံးမှာ false ပြန်ထားမယ်
-//
-// NOTE: Dashboard (Lovable) ဘက်မှာ confirmed/cancelled button တွေမှာ
-// ဒီ endpoint တွေကို call လုပ်ဖို့ ထပ်ထည့်ပေးရမယ်:
-//   PATCH /api/orders/confirm  → { order_id, customer_psid }
-//   PATCH /api/orders/cancel   → { order_id, customer_psid }
+// Order save → stock မနှုတ်သေး
+// Dashboard Confirmed → stock နှုတ်မယ်
+// Dashboard Cancelled → stock ပြန်ထည့်မယ် (confirmed ဖြစ်ခဲ့ရင်သာ)
 // ═══════════════════════════════════════════════════════════════
 async function deductStock(productId: number, quantity: number) {
   try {
-    const product = await supabaseQuery(
-      "products", "GET", null,
-      `id=eq.${productId}&select=stock_quantity,name`
-    );
+    const product = await supabaseQuery("products", "GET", null, `id=eq.${productId}&select=stock_quantity,name`);
     if (!product || product.length === 0) return;
     const newStock = Math.max(0, (product[0].stock_quantity || 0) - quantity);
     await supabaseQuery("products", "PATCH", { stock_quantity: newStock }, `id=eq.${productId}`);
-    console.log(`Stock deducted: product ${productId}, qty ${quantity}, remaining ${newStock}`);
-  } catch (e: any) {
-    console.error("deductStock error:", e);
-  }
+  } catch (e: any) { console.error("deductStock error:", e); }
 }
 
 async function restoreStock(productId: number, quantity: number) {
   try {
-    const product = await supabaseQuery(
-      "products", "GET", null,
-      `id=eq.${productId}&select=stock_quantity,name`
-    );
+    const product = await supabaseQuery("products", "GET", null, `id=eq.${productId}&select=stock_quantity,name`);
     if (!product || product.length === 0) return;
     const newStock = (product[0].stock_quantity || 0) + quantity;
     await supabaseQuery("products", "PATCH", { stock_quantity: newStock }, `id=eq.${productId}`);
-    console.log(`Stock restored: product ${productId}, qty ${quantity}, new total ${newStock}`);
-  } catch (e: any) {
-    console.error("restoreStock error:", e);
-  }
+  } catch (e: any) { console.error("restoreStock error:", e); }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -354,14 +282,9 @@ async function saveOrder(orderData: any) {
 async function getContext(customerId: number) {
   if (!customerId) return null;
   try {
-    const result = await supabaseQuery(
-      "conversation_context", "GET", null,
-      `customer_id=eq.${customerId}&select=*`
-    );
+    const result = await supabaseQuery("conversation_context", "GET", null, `customer_id=eq.${customerId}&select=*`);
     return result && result.length > 0 ? result[0] : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function updateContext(customerId: number, data: any) {
@@ -369,21 +292,17 @@ async function updateContext(customerId: number, data: any) {
   try {
     const existing = await getContext(customerId);
     if (existing) {
-      await supabaseQuery(
-        "conversation_context", "PATCH",
+      await supabaseQuery("conversation_context", "PATCH",
         { ...data, updated_at: new Date().toISOString() },
         `customer_id=eq.${customerId}`
       );
     } else {
       await supabaseQuery("conversation_context", "POST", {
-        customer_id: customerId,
-        ...data,
+        customer_id: customerId, ...data,
         updated_at: new Date().toISOString(),
       });
     }
-  } catch (e: any) {
-    console.error("updateContext error:", e);
-  }
+  } catch (e: any) { console.error("updateContext error:", e); }
 }
 
 function parsePreferences(preferences: any) {
@@ -397,16 +316,11 @@ function parsePreferences(preferences: any) {
   };
   if (!preferences) return defaults;
   try {
-    const p =
-      typeof preferences === "string" && preferences.startsWith("{")
-        ? JSON.parse(preferences)
-        : typeof preferences === "object"
-        ? preferences
-        : null;
-    if (!p)
-      return typeof preferences === "string" && preferences !== "pending"
-        ? { ...defaults, address: preferences }
-        : defaults;
+    const p = typeof preferences === "string" && preferences.startsWith("{")
+      ? JSON.parse(preferences)
+      : typeof preferences === "object" ? preferences : null;
+    if (!p) return typeof preferences === "string" && preferences !== "pending"
+      ? { ...defaults, address: preferences } : defaults;
     return {
       address: p.address ?? "",
       collecting_order: p.collecting_order || false,
@@ -415,21 +329,16 @@ function parsePreferences(preferences: any) {
       pending_order: p.pending_order || null,
       has_active_order: p.has_active_order || false,
     };
-  } catch {
-    return defaults;
-  }
+  } catch { return defaults; }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// AI TRAINING CONFIG FETCH
-// is_active=true တွေကိုပဲ ယူမယ်
+// AI TRAINING CONFIG
 // ═══════════════════════════════════════════════════════════════
 async function getActiveTrainingInstructions(): Promise<string> {
   try {
-    const configs = await supabaseQuery(
-      "ai_training_config", "GET", null,
-      "is_active=eq.true&select=system_prompt,content&order=created_at.asc"
-    );
+    const configs = await supabaseQuery("ai_training_config", "GET", null,
+      "is_active=eq.true&select=system_prompt,content&order=created_at.asc");
     if (!configs || configs.length === 0) return "";
     const instructions = configs
       .map((c: any) => c.content || c.system_prompt || "")
@@ -452,58 +361,39 @@ async function detectGenderFromName(name: string): Promise<string> {
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "user",
-            content: `နာမည် "${name}" က ယောကျ်ားလေးလား မိန်းကလေးလား? JSON format နဲ့သာ:\n{"gender":"male"} or {"gender":"female"} or {"gender":"unknown"}`,
-          },
-        ],
+        messages: [{
+          role: "user",
+          content: `နာမည် "${name}" က ယောကျ်ားလေးလား မိန်းကလေးလား? JSON format နဲ့သာ:\n{"gender":"male"} or {"gender":"female"} or {"gender":"unknown"}`,
+        }],
         max_tokens: 20,
         temperature: 0.1,
       },
-      {
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 5000,
-      }
+      { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" }, timeout: 5000 }
     );
     const raw = response.data.choices[0]?.message?.content || "{}";
     const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
     if (parsed.gender === "male") return "အကို";
     if (parsed.gender === "female") return "အမ";
     return "";
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND — Text
+// FACEBOOK SEND
 // ═══════════════════════════════════════════════════════════════
 async function sendMessage(recipientId: string, text: string) {
   try {
     await axios.post(
       `https://graph.facebook.com/v18.0/me/messages`,
       { recipient: { id: recipientId }, message: { text } },
-      {
-        params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN },
-        headers: { "Content-Type": "application/json" },
-      }
+      { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
     );
   } catch (error: any) {
     console.error("Send message error:", error?.response?.data || error.message);
-    await notifySystemError(
-      `Facebook Send Error: ${error?.response?.data?.error?.message || error.message}`
-    );
+    await notifySystemError(`Facebook Send Error: ${error?.response?.data?.error?.message || error.message}`);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND — Image
-// MEDIA_ENABLED = true မှသာ အလုပ်လုပ်မယ်
-// ═══════════════════════════════════════════════════════════════
 async function sendImageMessage(recipientId: string, imageUrl: string): Promise<void> {
   if (!MEDIA_ENABLED || !imageUrl?.trim()) return;
   try {
@@ -511,40 +401,21 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
       `https://graph.facebook.com/v18.0/me/messages`,
       {
         recipient: { id: recipientId },
-        message: {
-          attachment: {
-            type: "image",
-            payload: { url: imageUrl, is_reusable: false },
-          },
-        },
+        message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: false } } }
       },
-      {
-        params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN },
-        headers: { "Content-Type": "application/json" },
-      }
+      { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
     );
-    console.log(`Image sent to ${recipientId}: ${imageUrl}`);
   } catch (e: any) {
     console.error("sendImageMessage error:", e?.response?.data || e.message);
     await notifyOwnerTelegram(
-      `⚠️ ပုံပို့၍ မရဘဲ error ဖြစ်နေပါတယ်\n\n` +
-        `URL: ${imageUrl}\n` +
-        `Error: ${e?.response?.data?.error?.message || e.message}\n\n` +
-        `Customer ဆီ ပုံကိုယ်တိုင် ပို့ပေးပါ`
+      `⚠️ ပုံပို့၍ မရဘဲ error ဖြစ်နေပါတယ်\n\nURL: ${imageUrl}\nError: ${e?.response?.data?.error?.message || e.message}\n\nCustomer ဆီ ပုံကိုယ်တိုင် ပို့ပေးပါ`
     );
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SEND PRODUCT IMAGES
-// image_url = main photo, image_url2 = spec photo
-// ═══════════════════════════════════════════════════════════════
 async function sendProductImages(recipientId: string, product: any): Promise<void> {
   if (!MEDIA_ENABLED || !product) return;
-
-  if (product.image_url) {
-    await sendImageMessage(recipientId, product.image_url);
-  }
+  if (product.image_url) await sendImageMessage(recipientId, product.image_url);
   if (product.image_url2) {
     await new Promise(resolve => setTimeout(resolve, 500));
     await sendImageMessage(recipientId, product.image_url2);
@@ -554,10 +425,10 @@ async function sendProductImages(recipientId: string, product: any): Promise<voi
 // ═══════════════════════════════════════════════════════════════
 // MAIN AI RESPONSE
 // ═══════════════════════════════════════════════════════════════
-async function generateAIResponse(
-  psid: string,
-  messageText: string
-): Promise<{ reply: string; productToShow: any | null }> {
+async function generateAIResponse(psid: string, messageText: string): Promise<{
+  reply: string;
+  productToShow: any | null;
+}> {
   const fallback = "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 
   try {
@@ -578,25 +449,18 @@ async function generateAIResponse(
       await updateContext(customer.id, {
         preferences: { address: "", collecting_order: false, has_active_order: false },
       });
-      const greeting =
-        "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\n" +
-        "အိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ " +
-        "သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ " +
-        "ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
+      const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
       await saveConversation(customer.id, "customer", messageText);
       await saveConversation(customer.id, "bot", greeting);
       return { reply: greeting, productToShow: null };
     }
 
-    const productList = products
-      .map(
-        (p: any) =>
-          `• ID:${p.id} | ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK` +
-          (p.description ? `\n  ${p.description}` : "") +
-          (p.filter_stages ? `\n  Filter: ${p.filter_stages}` : "") +
-          (p.filter_precision ? ` | ${p.filter_precision}` : "")
-      )
-      .join("\n\n");
+    const productList = products.map((p: any) => {
+      return `• ID:${p.id} | ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK` +
+        (p.description ? `\n  ${p.description}` : "") +
+        (p.filter_stages ? `\n  Filter: ${p.filter_stages}` : "") +
+        (p.filter_precision ? ` | ${p.filter_precision}` : "");
+    }).join("\n\n");
 
     const historyMessages = [...history].reverse().map((h: any) => ({
       role: h.message_type === "customer" ? "user" : "assistant",
@@ -611,13 +475,12 @@ async function generateAIResponse(
       ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။ နာမည်၊ ဖုန်းနံပါတ်၊ လိပ်စာ ရယူနေသည်။`
       : "";
 
-    // FIX: has_active_order=true ဆိုရင် AI ကို ထပ်မကောက်ရ သတိပေးမယ်
     const activeOrderWarning = prefs.has_active_order
-      ? `\n\n🔒 CRITICAL: ဤ Customer ၏ အော်ဒါ submit ပြီးသားဖြစ်သည်။ "ဟုတ်ကဲ့"၊ "အိုကေ"၊ "ကောင်းပြီ"၊ "ဟုတ်" ကဲ့သို့ confirm စကားများကို အော်ဒါအသစ်အဖြစ် လုံးဝမသတ်မှတ်ရ။ action="save_order" ကို လုံးဝမသုံးရ။`
+      ? `\n\n🔒 CRITICAL: ဤ Customer ၏ အော်ဒါ submit ပြီးသားဖြစ်သည်။ "ဟုတ်ကဲ့"၊ "အိုကေ"၊ "ကောင်းပြီ" ကဲ့သို့ confirm စကားများကို အော်ဒါအသစ်အဖြစ် လုံးဝမသတ်မှတ်ရ။ action="save_order" ကို လုံးဝမသုံးရ။`
       : "";
 
     const trainingSection = trainingInstructions
-      ? `\n━━━ Client ညွှန်ကြားချက်များ (လိုက်နာရမည်) ━━━\n${trainingInstructions}`
+      ? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${trainingInstructions}`
       : "";
 
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
@@ -626,16 +489,19 @@ async function generateAIResponse(
 • ${addressRule} "ရှင့်" မသုံးနဲ့။
 • မိမိကို "ခင်ဗျာ" သုံးပါ။
 • သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
-• Bullet point ကြီးများ ရှောင်ပါ။${trainingSection}
+• Markdown မသုံးရ — ** * # ကဲ့သို့ formatting လုံးဝမသုံးရ။ Plain text သာသုံးပါ။${trainingSection}
 
-━━━ Response Format ━━━
-သင်သည် အမြဲ JSON format နဲ့ respond ရမည်:
+━━━ Response Format (အရေးကြီးဆုံး) ━━━
+သင်သည် အမြဲ JSON format နဲ့ respond ရမည်။
+"reply" field ထဲမှာ Customer ဆီပို့မယ့် plain text သာ ထည့်ပါ။
+JSON structure၊ field name တွေ၊ { } bracket တွေကို "reply" ထဲ လုံးဝမထည့်ရ။
+
 {
-  "reply": "Customer ဆီပို့မယ့် message သာပါရမည်",
-  "action": "none" | "start_order" | "save_order" | "notify_owner" | "show_product",
-  "product_id": null | number,
-  "order_data": null | { "product_id": number, "product_name": string },
-  "collected_data": null | { "name": string, "phone": string, "address": string, "quantity": number }
+  "reply": "ဒီနေရာမှာ Customer ဆီပို့မယ့် plain Myanmar text သာထည့်ပါ",
+  "action": "none",
+  "product_id": null,
+  "order_data": null,
+  "collected_data": null
 }
 
 ━━━ Action Rules ━━━
@@ -644,20 +510,18 @@ async function generateAIResponse(
 • "start_order" — Customer က ဝယ်ယူလိုသော intent ရှိမှသာ
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးမှသာ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
-  ⚠️ "ဟုတ်ကဲ့"၊ "အိုကေ"၊ "ကောင်းပြီ" ကဲ့သို့ confirm စကားကို order အသစ်အဖြစ် မသတ်မှတ်ရ
-• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း
+  ⚠️ "ဟုတ်ကဲ့"၊ "အိုကေ"၊ "ကောင်းပြီ" ကို order အသစ်အဖြစ် မသတ်မှတ်ရ
+• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း သို့မဟုတ် မသေချာသော ဈေးနှုန်း
 
-━━━ Smart Context Handling ━━━
+━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
-• အော်ဒါ ကောက်နေချိန် ကြားဖြတ်မေးခွန်းရင် → ဖြေပြီးမှ ပြန်ဆက်၊ action: "none"
-• cancel သဘောထားရှိရင် → collecting_order ရပ်၊ action: "none"
 
-━━━ ဈေးနှုန်း STRICT RULE ━━━
+━━━ ဈေးနှုန်း Rules ━━━
 ⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။
-⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner" — Customer ဆီ ဈေးနှုန်း မပြောဘဲ owner ဆီ ပို့ပါ။
-⚠️ Stock အကြောင်း လုံးဝမပြောရ — ရှိတယ်ဖြစ်ဖြစ် မရှိဘူးဖြစ်ဖြစ် Customer ကို မပြောရ။
-⚠️ reply field ထဲမှာ placeholder text မပါရ — "ဈေးနှုန်းဖြည့်ပါ"၊ "[ဖြည့်ပါ]" မျိုး လုံးဝမထည့်ရ။
-⚠️ Product တစ်ခုအကြောင်း ဖြေတဲ့အခါ — ဈေးနှုန်း၊ filter stage တွေကို သဘာဝကျကျ စကားပြောသလို ဖြေပါ။ ပုံပို့မည့်အခါမှသာ "ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ 👇" ထည့်ပါ။
+⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner" — Customer ဆီ မပြောဘဲ owner ကိုသာ ပို့ပါ။
+⚠️ Stock အကြောင်း လုံးဝမပြောရ။
+⚠️ "reply" field ထဲမှာ placeholder text မထည့်ရ — "ဈေးနှုန်းဖြည့်ပါ"၊ "[ဖြည့်ပါ]" မျိုး လုံးဝမထည့်ရ။
+⚠️ Product ဖြေတဲ့အခါ ပုံပို့မည်ဆိုမှသာ "ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ 👇" ထည့်ပါ။
 
 ━━━ Products ━━━
 ${productList}`;
@@ -675,10 +539,7 @@ ${productList}`;
         temperature: 0.7,
       },
       {
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
         timeout: 15000,
       }
     );
@@ -687,8 +548,6 @@ ${productList}`;
 
     // ═══════════════════════════════════════════════════════════════
     // AI RESPONSE PARSER
-    // FIX: AI က "json\n{...}" ပုံစံပြန်ရင် { ကို ရှာပြီး parse မယ်
-    // ဒါမှ JSON တစ်ခုလုံး Customer ဆီ မရောက်နိုင်ဘူး
     // ═══════════════════════════════════════════════════════════════
     let aiResponse: any = {
       reply: fallback,
@@ -697,8 +556,9 @@ ${productList}`;
       order_data: null,
       collected_data: null,
     };
+
     try {
-      // ① markdown fence နဲ့ "json" prefix တွေ ဖယ်မယ်
+      // ① markdown fence နဲ့ "json" prefix ဖယ်မယ်
       const stripped = rawContent
         .replace(/^```json\s*/i, "")
         .replace(/^```\s*/i, "")
@@ -709,20 +569,20 @@ ${productList}`;
         // ② တိုက်ရိုက် JSON
         aiResponse = JSON.parse(stripped);
       } else {
-        // ③ "json" prefix ပါပြီး { ရှိရင် ထုတ်မယ်
+        // ③ { ပါနေတဲ့ နေရာကို ရှာမယ်
         const jsonStart = stripped.indexOf("{");
         if (jsonStart !== -1) {
           aiResponse = JSON.parse(stripped.slice(jsonStart));
         } else {
-          // ④ Plain text ဆိုရင် reply အဖြစ် သုံးမယ်
           aiResponse.reply = stripped;
         }
       }
     } catch {
-      // ⑤ Parse မရရင် raw text ကို sanitize လုပ်ပြီး သုံးမယ်
+      // ④ Parse မရရင် raw text sanitize လုပ်မယ်
       aiResponse.reply = sanitizeReply(rawContent);
     }
 
+    // reply field ထဲမှာ JSON ပါနေသေးရင် ဖယ်မယ်
     const safeReply = sanitizeReply(aiResponse.reply || fallback);
     const action = aiResponse.action || "none";
 
@@ -734,17 +594,12 @@ ${productList}`;
 
     // ── START ORDER ──
     if (action === "start_order" && aiResponse.order_data) {
-      // FIX: product_id မရှိရင် product name နဲ့ match လုပ်မယ်
-      // products[0] ကို blind ယူတဲ့ logic ဖယ်လိုက်ပြီ
       const product =
         products.find((p: any) => p.id === aiResponse.order_data.product_id) ||
         products.find((p: any) => p.name === aiResponse.order_data.product_name) ||
         products.find((p: any) =>
-          aiResponse.order_data.product_name
-            ?.toLowerCase()
-            .includes(p.name.toLowerCase())
-        ) ||
-        null; // Product မတွေ့ရင် null — ယူဆမလုပ်ဘူး
+          aiResponse.order_data.product_name?.toLowerCase().includes(p.name.toLowerCase())
+        ) || null;
 
       await updateContext(customer.id, {
         preferences: {
@@ -758,41 +613,31 @@ ${productList}`;
     }
 
     // ── SAVE ORDER ──
-    // FIX 1: has_active_order=true ဆိုရင် duplicate order မဖြစ်အောင် block
-    // FIX 2: product မသေချာရင် order မကောက်ဘဲ owner ကို notify လုပ်မယ်
-    // FIX 3: Stock ကို order save အချိန်မှာ မနှုတ်တော့ဘဲ
-    //        Dashboard မှာ Confirmed နှိပ်မှ နှုတ်မယ် (order-confirm endpoint မှာ)
     if (action === "save_order" && aiResponse.collected_data) {
       if (prefs.has_active_order) {
-        // Duplicate order — block လုပ်မယ်
-        console.log(`Duplicate order blocked for customer ${customer.id} — has_active_order=true`);
+        console.log(`Duplicate order blocked for customer ${customer.id}`);
       } else {
         const { name, phone, address, quantity } = aiResponse.collected_data;
         if (name && phone && address) {
-          // Product ကို pending_product_id ကနေ ယူမယ် — ပိုသေချာတယ်
           const product = prefs.pending_product_id
             ? products.find((p: any) => p.id === prefs.pending_product_id)
             : prefs.pending_product
-            ? products.find(
-                (p: any) =>
-                  p.name === prefs.pending_product ||
-                  p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
+            ? products.find((p: any) =>
+                p.name === prefs.pending_product ||
+                p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
               )
-            : null; // Product မသေချာရင် null — blind ယူမလုပ်ဘူး
+            : null;
 
-          // Product မတွေ့ရင် owner ကို notify လုပ်ပြီး မကောက်ဘဲနေမယ်
           if (!product) {
             await notifyOwnerTelegram(
               `⚠️ Order တစ်ခု product မရှင်းသေးဘဲ ဝင်လာတယ်\n\n` +
-                `Customer: ${sanitizeTelegramText(name)}\n` +
-                `Phone: ${sanitizeTelegramText(phone)}\n` +
-                `Address: ${sanitizeTelegramText(address)}\n` +
-                `Product ပြောတာ: ${sanitizeTelegramText(prefs.pending_product || "မပြောဘဲ")}\n\n` +
-                `Dashboard မှာ စစ်ပြီး manual order ဖန်တီးပေးပါ`
+              `Customer: ${sanitizeTelegramText(name)}\n` +
+              `Phone: ${sanitizeTelegramText(phone)}\n` +
+              `Address: ${sanitizeTelegramText(address)}\n` +
+              `Product ပြောတာ: ${sanitizeTelegramText(prefs.pending_product || "မပြောဘဲ")}\n\n` +
+              `Dashboard မှာ စစ်ပြီး manual order ဖန်တီးပေးပါ`
             );
-            await notifyOwnerDashboard(
-              customer.id,
-              "human_support_needed",
+            await notifyOwnerDashboard(customer.id, "human_support_needed",
               "⚠️ Product မရှင်းသေး Order",
               `${name} | ${phone} | ${address} — Product မသေချာ`
             );
@@ -810,32 +655,25 @@ ${productList}`;
               delivery_address: address,
               quantity: quantity || 1,
               total_price_mmk: totalPrice,
-              // FIX: Stock ဒီမှာ မနှုတ်တော့ဘူး
-              // status = pending → Dashboard မှာ Confirmed နှိပ်မှ stock နှုတ်မယ်
+              // Stock ဒီမှာ မနှုတ်ဘဲ Dashboard Confirmed မှ နှုတ်မယ်
               status: isPreorder ? "preorder" : "pending",
             });
 
             if (order) {
               const orderLabel = isPreorder ? "(Pre-order)" : "";
-              // FIX: sanitizeTelegramText သုံးမယ် — Notification error မဖြစ်အောင်
-              await notifyOwnerDashboard(
-                customer.id,
-                "new_order",
+              await notifyOwnerDashboard(customer.id, "new_order",
                 `🛒 အော်ဒါအသစ် ${orderLabel}`,
                 `${name} | ${phone} | ${address} | ${product.name} x${quantity || 1} | ${totalPrice.toLocaleString()} MMK`
               );
-
               await notifyOwnerTelegram(
                 `🛒 အော်ဒါအသစ် ဝင်လာပါပြီ ${orderLabel}\n\n` +
-                  `👤 ${sanitizeTelegramText(name)}\n` +
-                  `📞 ${sanitizeTelegramText(phone)}\n` +
-                  `📍 ${sanitizeTelegramText(address)}\n` +
-                  `📦 ${sanitizeTelegramText(product.name)} x${quantity || 1}\n` +
-                  `💰 ${totalPrice.toLocaleString()} MMK\n\n` +
-                  `👉 Dashboard မှာ confirm လုပ်ပေးပါ`
+                `👤 ${sanitizeTelegramText(name)}\n` +
+                `📞 ${sanitizeTelegramText(phone)}\n` +
+                `📍 ${sanitizeTelegramText(address)}\n` +
+                `📦 ${sanitizeTelegramText(product.name)} x${quantity || 1}\n` +
+                `💰 ${totalPrice.toLocaleString()} MMK\n\n` +
+                `👉 Dashboard မှာ confirm လုပ်ပေးပါ`
               );
-
-              // has_active_order = true — Duplicate order ကာကွယ်မယ်
               await updateContext(customer.id, {
                 preferences: {
                   address: finalAddress,
@@ -853,16 +691,13 @@ ${productList}`;
 
     // ── NOTIFY OWNER ──
     if (action === "notify_owner") {
-      await notifyOwnerDashboard(
-        customer.id,
-        "human_support_needed",
-        "🙋 ကိုယ်တိုင်ဖြေရမည်",
-        `Customer: ${messageText}`
+      await notifyOwnerDashboard(customer.id, "human_support_needed",
+        "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`
       );
       await notifyOwnerTelegram(
         `🙋 ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်\n\n` +
-          `Customer မေးတာ: ${sanitizeTelegramText(messageText)}\n\n` +
-          `Dashboard မှာ reply လုပ်ပေးပါ`
+        `Customer မေးတာ: ${sanitizeTelegramText(messageText)}\n\n` +
+        `Dashboard မှာ reply လုပ်ပေးပါ`
       );
     }
 
@@ -878,44 +713,23 @@ ${productList}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER CONFIRM ENDPOINT
-// Dashboard မှာ "Confirmed" နှိပ်တဲ့အခါ ဒီ endpoint ကို call လုပ်ရမယ်
-// → Stock နှုတ်မယ်
-// → has_active_order = false reset လုပ်မယ် (Customer ထပ်ဝယ်နိုင်အောင်)
-// → orders table status = "confirmed" update လုပ်မယ်
-//
-// Dashboard (Lovable) မှာ Confirmed button မှာ ဒါကို ထပ်ထည့်ပေးရမယ်:
-// fetch('/api/webhook?action=confirm-order', {
-//   method: 'POST',
-//   body: JSON.stringify({ order_id, customer_psid, product_id, quantity })
-// })
+// ORDER CONFIRM — Dashboard မှာ Confirmed နှိပ်တဲ့အခါ
+// Stock နှုတ်မယ် + has_active_order reset
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
   if (!order_id) return;
-
   try {
-    // ① Order status → confirmed
     await supabaseQuery("orders", "PATCH", { status: "confirmed" }, `id=eq.${order_id}`);
-
-    // ② Stock နှုတ်မယ် (confirmed မှ နှုတ်တယ် — cancel ဖြစ်ရင် ပြန်ထည့်နိုင်မယ်)
-    if (product_id && quantity) {
-      await deductStock(product_id, quantity);
-    }
-
-    // ③ has_active_order = false reset — Customer ထပ်ဝယ်နိုင်မယ်
+    if (product_id && quantity) await deductStock(product_id, quantity);
     if (customer_psid) {
       const customer = await getOrCreateCustomer(customer_psid);
       if (customer?.id) {
         const context = await getContext(customer.id);
         const prefs = parsePreferences(context?.preferences);
-        await updateContext(customer.id, {
-          preferences: { ...prefs, has_active_order: false },
-        });
+        await updateContext(customer.id, { preferences: { ...prefs, has_active_order: false } });
       }
     }
-
-    console.log(`Order ${order_id} confirmed — stock deducted, has_active_order reset`);
   } catch (e: any) {
     console.error("handleOrderConfirm error:", e);
     await notifySystemError(`Order Confirm Error: ${e.message}`);
@@ -923,39 +737,23 @@ async function handleOrderConfirm(body: any): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER CANCEL ENDPOINT
-// Dashboard မှာ "Cancelled" နှိပ်တဲ့အခါ ဒီ endpoint ကို call လုပ်ရမယ်
-// → Stock ပြန်ထည့်မယ် (confirmed ပြီးတဲ့ order cancel ဖြစ်ရင်)
-// → has_active_order = false reset လုပ်မယ်
-// → orders table status = "cancelled" update လုပ်မယ်
+// ORDER CANCEL — Dashboard မှာ Cancelled နှိပ်တဲ့အခါ
+// Confirmed ဖြစ်ခဲ့ရင်သာ stock ပြန်ထည့် + has_active_order reset
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderCancel(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity, was_confirmed } = body;
   if (!order_id) return;
-
   try {
-    // ① Order status → cancelled
     await supabaseQuery("orders", "PATCH", { status: "cancelled" }, `id=eq.${order_id}`);
-
-    // ② Confirmed ပြီးတဲ့ order cancel ဖြစ်ရင်သာ stock ပြန်ထည့်မယ်
-    // Pending order cancel ဆိုရင် stock မနှုတ်ဘဲဆဲဆဲမို့ ပြန်မထည့်ရ
-    if (was_confirmed && product_id && quantity) {
-      await restoreStock(product_id, quantity);
-    }
-
-    // ③ has_active_order = false reset — Customer ထပ်ဝယ်နိုင်မယ်
+    if (was_confirmed && product_id && quantity) await restoreStock(product_id, quantity);
     if (customer_psid) {
       const customer = await getOrCreateCustomer(customer_psid);
       if (customer?.id) {
         const context = await getContext(customer.id);
         const prefs = parsePreferences(context?.preferences);
-        await updateContext(customer.id, {
-          preferences: { ...prefs, has_active_order: false },
-        });
+        await updateContext(customer.id, { preferences: { ...prefs, has_active_order: false } });
       }
     }
-
-    console.log(`Order ${order_id} cancelled — stock ${was_confirmed ? "restored" : "unchanged"}, has_active_order reset`);
   } catch (e: any) {
     console.error("handleOrderCancel error:", e);
     await notifySystemError(`Order Cancel Error: ${e.message}`);
@@ -967,7 +765,6 @@ async function handleOrderCancel(body: any): Promise<void> {
 // ═══════════════════════════════════════════════════════════════
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
-  // ── GET: Facebook Webhook Verification ──
   if (req.method === "GET") {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
@@ -981,13 +778,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "POST") {
     const body = req.body;
 
-    // ── Dashboard Order Confirm ──
+    // ── Dashboard Order Actions ──
     if (req.query.action === "confirm-order") {
       await handleOrderConfirm(body);
       return res.status(200).json({ success: true });
     }
-
-    // ── Dashboard Order Cancel ──
     if (req.query.action === "cancel-order") {
       await handleOrderCancel(body);
       return res.status(200).json({ success: true });
@@ -1004,85 +799,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const messageId = event.message?.mid;
             if (!senderId) continue;
 
-            tasks.push(
-              (async () => {
-                try {
-                  // ── STEP 1: ECHO CHECK ──
-                  if (event.message?.is_echo) {
-                    await handleMessageEcho(event);
-                    return;
-                  }
-
-                  // ── STEP 2: DEDUPLICATION ──
-                  if (messageId) {
-                    if (await isMessageProcessed(messageId)) {
-                      console.log(`Skipping duplicate: ${messageId}`);
-                      return;
-                    }
-                    await markMessageProcessed(messageId);
-                  }
-
-                  // ── STEP 3: CUSTOMER ──
-                  const customer = await getOrCreateCustomer(senderId);
-
-                  // ── STEP 4: BOT PAUSE CHECK ──
-                  if (await isBotPausedForCustomer(customer)) {
-                    console.log(`Bot paused for customer ${customer.id} — saving message`);
-                    if (event.message?.text) {
-                      await saveConversation(customer.id, "customer", event.message.text);
-                    }
-                    return;
-                  }
-
-                  // ── STEP 5: AI RESPONSE ──
-                  if (event.message?.text) {
-                    const { reply, productToShow } = await generateAIResponse(
-                      senderId,
-                      event.message.text
-                    );
-
-                    // Race condition ကာကွယ် — Admin ဝင်ဖြေပြီးသွားရင် bot reply မပို့ရ
-                    const freshCheck = await supabaseQuery(
-                      "customers", "GET", null,
-                      `psid=eq.${senderId}&select=bot_paused`
-                    );
-                    if (freshCheck?.[0]?.bot_paused) {
-                      console.log("Bot paused after AI — reply discarded");
-                      return;
-                    }
-
-                    await sendMessage(senderId, reply);
-
-                    if (productToShow) {
-                      await new Promise(resolve => setTimeout(resolve, 300));
-                      await sendProductImages(senderId, productToShow);
-                    }
-
-                  } else if (event.message) {
-                    // Text မဟုတ်တဲ့ message (ပုံ၊ sticker etc.)
-                    const msgType = Object.keys(event.message)
-                      .filter(k => k !== "mid" && k !== "seq")
-                      .join(", ");
-                    await sendMessage(
-                      senderId,
-                      "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏"
-                    );
-                    await notifyOwnerDashboard(
-                      customer.id,
-                      "non_text_message",
-                      "📎 Text မဟုတ်တဲ့ Message",
-                      `Customer ပို့တာ: ${msgType}`
-                    );
-                    await notifyOwnerTelegram(
-                      `📎 Text မဟုတ်တဲ့ Message\nအမျိုးအစား: ${msgType}\n👉 Dashboard မှာ ကြည့်ပြီး ပြန်ဆက်သွယ်ပေးပါ`
-                    );
-                  }
-                } catch (innerErr: any) {
-                  console.error("Task error:", innerErr);
-                  await notifySystemError(`Task Error: ${innerErr.message}`);
+            tasks.push((async () => {
+              try {
+                if (event.message?.is_echo) {
+                  await handleMessageEcho(event);
+                  return;
                 }
-              })()
-            );
+
+                if (messageId) {
+                  if (await isMessageProcessed(messageId)) return;
+                  await markMessageProcessed(messageId);
+                }
+
+                const customer = await getOrCreateCustomer(senderId);
+
+                if (await isBotPausedForCustomer(customer)) {
+                  if (event.message?.text) {
+                    await saveConversation(customer.id, "customer", event.message.text);
+                  }
+                  return;
+                }
+
+                if (event.message?.text) {
+                  const { reply, productToShow } = await generateAIResponse(senderId, event.message.text);
+
+                  const freshCheck = await supabaseQuery("customers", "GET", null, `psid=eq.${senderId}&select=bot_paused`);
+                  if (freshCheck?.[0]?.bot_paused) return;
+
+                  await sendMessage(senderId, reply);
+
+                  if (productToShow) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    await sendProductImages(senderId, productToShow);
+                  }
+
+                } else if (event.message) {
+                  const msgType = Object.keys(event.message).filter(k => k !== "mid" && k !== "seq").join(", ");
+                  await sendMessage(senderId, "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏");
+                  await notifyOwnerDashboard(customer.id, "non_text_message", "📎 Text မဟုတ်တဲ့ Message", `Customer ပို့တာ: ${msgType}`);
+                  await notifyOwnerTelegram(`📎 Text မဟုတ်တဲ့ Message\nအမျိုးအစား: ${msgType}\n👉 Dashboard မှာ ကြည့်ပြီး ပြန်ဆက်သွယ်ပေးပါ`);
+                }
+
+              } catch (innerErr: any) {
+                console.error("Task error:", innerErr);
+                await notifySystemError(`Task Error: ${innerErr.message}`);
+              }
+            })());
           }
         }
 

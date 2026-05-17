@@ -31,17 +31,14 @@ function sanitizeTelegramText(text: string): string {
 function sanitizeReply(text: string): string {
   if (!text) return "";
   let cleaned = text
-    // FIX: \n escape sequence ကို real newline အဖြစ် ပြောင်းမယ်
     .replace(/\\n/g, "\n")
     .replace(/\\t/g, " ")
-    // JSON တွေ ဖယ်မယ်
     .replace(/^\s*\{[\s\S]*\}\s*$/gm, "")
     .replace(/\{[\s\S]*?"reply"[\s\S]*?\}/g, "")
     .replace(/```json[\s\S]*?```/gi, "")
     .replace(/```[\s\S]*?```/gi, "")
     .replace(/"(reply|action|product_id|product_ids|order_data|collected_data)":\s*(?:"[^"]*"|\{[^}]*\}|\[[^\]]*\]|null|true|false|\d+),?\s*/gi, "")
     .replace(/^\s*[{}[\]]\s*$/gm, "")
-    // Internal flag တွေ ဖယ်မယ်
     .replace(/NEED_FOLLOW_UP:\[.*?\]/gs, "")
     .replace(/NEED_FOLLOW_UP:[^\n]*/g, "")
     .replace(/PRICE_UNCERTAIN:[^\n]*/g, "")
@@ -52,17 +49,16 @@ function sanitizeReply(text: string): string {
     .replace(/ORDER_COLLECTING/g, "")
     .replace(/ORDER_COMPLETE:\{.*?\}/gs, "")
     .replace(/NOTIFY_OWNER:[^\n]*/g, "")
-    // Placeholder text တွေ ဖယ်မယ်
     .replace(/ဈေးနှုန်းဖြည့်ပါ/g, "")
     .replace(/\[.*?ဖြည့်ပါ.*?\]/g, "")
     .replace(/\[COMMAND:.*?\]/g, "")
     .replace(/\[ACTION:.*?\]/g, "")
-    // FIX: ပုံပို့မည်ဆိုတဲ့ hint phrase တွေ ဖယ်မယ်
-    // AI က show_product action မပါဘဲ ဒါတွေ reply ထဲ ထည့်ရင် မှားတယ်
+    // FIX: ID: နဲ့ product ID တွေ customer ဆီ မရောက်အောင် ဖယ်မယ်
+    .replace(/ID:\d+\s*\|?\s*/g, "")
+    // ပုံ hint phrase တွေ ဖယ်မယ်
     .replace(/ပုံလေးပါ\s*တစ်ပါတည်းကြည့်နိုင်ပါတယ်[^၊။\n]*/g, "")
     .replace(/တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ\s*👇/g, "")
     .replace(/👇/g, "")
-    // Markdown တွေ ဖယ်မယ်
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/\*(.*?)\*/g, "$1")
     .replace(/^[\*\-]\s+/gm, "")
@@ -432,24 +428,21 @@ async function sendProductImages(recipientId: string, product: any): Promise<voi
 
 // ═══════════════════════════════════════════════════════════════
 // SEND MULTIPLE PRODUCT IMAGES
-// Customer က "အကုန်ပြပါ" / "သုံးမျိုးလုံး ပြပါ" ပြောတဲ့အခါ
+// Customer "အကုန်ပုံပြပါ" ဆိုတဲ့အခါ
 // Product တစ်ခုချင်းစီ နာမည်+ဈေး text ပို့ပြီး ပုံလိုက်ပို့မယ်
 // ═══════════════════════════════════════════════════════════════
 async function sendMultipleProductImages(recipientId: string, productList: any[]): Promise<void> {
   if (!MEDIA_ENABLED || !productList?.length) return;
   for (const product of productList) {
-    // နာမည်နဲ့ ဈေးနှုန်း text အရင်ပို့မယ်
     await sendMessage(recipientId,
       `${product.name}\n${Number(product.price_mmk).toLocaleString()} ကျပ်`
     );
     await new Promise(resolve => setTimeout(resolve, 300));
-    // ပုံ ပို့မယ်
     if (product.image_url) await sendImageMessage(recipientId, product.image_url);
     if (product.image_url2) {
       await new Promise(resolve => setTimeout(resolve, 500));
       await sendImageMessage(recipientId, product.image_url2);
     }
-    // Product တစ်ခုနဲ့တစ်ခု ကြား နည်းနည်း gap ပေးမယ်
     await new Promise(resolve => setTimeout(resolve, 800));
   }
 }
@@ -488,12 +481,14 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       return { reply: greeting, productToShow: null, productsToShow: [] };
     }
 
-    const productList = products.map((p: any) =>
-      `• ID:${p.id} | ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK` +
-      (p.description ? `\n  ${p.description}` : "") +
-      (p.filter_stages ? `\n  Filter: ${p.filter_stages}` : "") +
+    // FIX: Product list ကို AI ဆီ ပေးတဲ့အခါ ID မပါဘဲ name နဲ့ ဈေးပဲ ပေးမယ်
+    // AI က Customer ဆီ ID တွေ ဖြေမသွားအောင်
+    const productListForAI = products.map((p: any) =>
+      `• [ID:${p.id}] ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK` +
+      (p.description ? ` | ${p.description}` : "") +
+      (p.filter_stages ? ` | Filter: ${p.filter_stages}` : "") +
       (p.filter_precision ? ` | ${p.filter_precision}` : "")
-    ).join("\n\n");
+    ).join("\n");
 
     const historyMessages = [...history].reverse().map((h: any) => ({
       role: h.message_type === "customer" ? "user" : "assistant",
@@ -509,7 +504,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       : "";
 
     const activeOrderWarning = prefs.has_active_order
-      ? `\n\n🔒 CRITICAL: ဤ Customer ၏ အော်ဒါ submit ပြီးသားဖြစ်သည်။ "ဟုတ်ကဲ့"၊ "အိုကေ" ကဲ့သို့ confirm စကားများကို အော်ဒါအသစ်အဖြစ် လုံးဝမသတ်မှတ်ရ။ action="save_order" ကို လုံးဝမသုံးရ။`
+      ? `\n\n🔒 CRITICAL: ဤ Customer ၏ အော်ဒါ submit ပြီးသားဖြစ်သည်။ action="save_order" ကို လုံးဝမသုံးရ။`
       : "";
 
     const trainingSection = trainingInstructions
@@ -523,7 +518,8 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • မိမိကို "ခင်ဗျာ" သုံးပါ။
 • သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
 • Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
-• \\n \\t escape sequence တွေ reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
+• \\n escape sequence တွေ reply ထဲ မထည့်ရ။
+• ⚠️ Product ID တွေ ([ID:x] ပုံစံ) ကို reply ထဲ လုံးဝမထည့်ရ — သင့် internal reference သာဖြစ်သည်${trainingSection}
 
 ━━━ Response Format ━━━
 အမြဲ JSON format နဲ့ respond ရမည်။
@@ -541,15 +537,15 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
 • "show_product" — Customer က product တစ်ခုတည်း ကြည့်ချင်တဲ့အခါ
-  → product_id ထည့်ပေးပါ
-  ⚠️ reply ထဲမှာ "ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ် 👇" မထည့်ရ
-  Code က အလိုအလျောက် ပုံပို့ပေးမည်
+  → product_id ထည့်ပေးပါ ([ID:x] ထဲက x number)
+  ⚠️ reply ထဲမှာ ပုံပို့မည်ဆိုသော hint မထည့်ရ — Code က အလိုအလျောက် ပုံပို့မည်
 • "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်တဲ့အခါ
   → product_ids: [id1, id2, id3] array ထည့်ပေးပါ
-  ⚠️ reply ထဲမှာ ပုံပို့မည်ဆိုတဲ့ hint မထည့်ရ
-  Code က တစ်ခုချင်းစီ နာမည်+ဈေး+ပုံ အလိုအလျောက် ပို့ပေးမည်
-• "start_order" — Customer က ဝယ်ယူမယ်ဆိုသောအခါ ချက်ချင်းသုံးပါ
-  ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order action ပါ တစ်ပါတည်းထွက်ရမည်
+  ⚠️ reply ထဲမှာ "ပို့ပေးပါမယ်" မထည့်ရ — Code က တစ်ခုချင်းစီ နာမည်+ဈေး+ပုံ ပို့မည်
+  ⚠️ IMPORTANT: Customer က ပုံကြည့်ချင်တာနဲ့ show_products ချက်ချင်းထုတ်ပါ
+    reply ထဲမှာ "ပို့ပေးပါမယ်" ပြောပြီး action မထုတ်ဘဲနေခြင်း တားမြစ်သည်
+• "start_order" — Customer က ဝယ်မယ်ဆိုသောအခါ ချက်ချင်းသုံးပါ
+  ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးမှသာ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
 • "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း၊ delivery date၊ warranty
@@ -558,15 +554,13 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 ${orderContext}${activeOrderWarning}
 
 ━━━ ဈေးနှုန်း Rules ━━━
-⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။
+⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။ Product ID ကို reply ထဲ မထည့်ရ။
 ⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
 ⚠️ Stock အကြောင်း လုံးဝမပြောရ။
-⚠️ "reply" ထဲမှာ placeholder text မထည့်ရ — "ဈေးနှုန်းဖြည့်ပါ" မျိုး လုံးဝမထည့်ရ။
 ⚠️ ပုံပို့မည်ဆိုသော hint ("ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ် 👇") ကို reply ထဲ လုံးဝမထည့်ရ။
-   show_product သို့မဟုတ် show_products action သာ သုံးပါ။ Code က ပုံပို့ပေးမည်။
 
-━━━ Products ━━━
-${productList}`;
+━━━ Products (ID တွေသည် internal reference သာဖြစ်သည် — Customer ဆီ မပြောရ) ━━━
+${productListForAI}`;
 
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
@@ -628,7 +622,6 @@ ${productList}`;
     }
 
     // ── SHOW MULTIPLE PRODUCTS ──
-    // Customer "အကုန်ပြပါ" / "သုံးမျိုးလုံးပြပါ" ဆိုရင်
     let productsToShow: any[] = [];
     if (action === "show_products" && aiResponse.product_ids?.length > 0) {
       productsToShow = aiResponse.product_ids
@@ -779,7 +772,7 @@ ${productList}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER CONFIRM
+// ORDER CONFIRM — Dashboard Confirmed နှိပ်တဲ့အခါ stock နှုတ်မယ်
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
@@ -802,7 +795,7 @@ async function handleOrderConfirm(body: any): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER CANCEL
+// ORDER CANCEL — Dashboard Cancelled နှိပ်တဲ့အခါ stock ပြန်ထည့်မယ်
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderCancel(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity, was_confirmed } = body;
@@ -897,7 +890,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     await sendProductImages(senderId, productToShow);
                   }
 
-                  // Multiple products ပုံ တစ်ခုချင်းစီ ပို့မယ်
+                  // Multiple products တစ်ခုချင်းစီ ပို့မယ်
                   if (productsToShow.length > 0) {
                     await new Promise(resolve => setTimeout(resolve, 300));
                     await sendMultipleProductImages(senderId, productsToShow);

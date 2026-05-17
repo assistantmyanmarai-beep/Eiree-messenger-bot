@@ -822,6 +822,16 @@ async function handleOrderCancel(body: any): Promise<void> {
 // ═══════════════════════════════════════════════════════════════
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
+  // CORS headers — Dashboard က webhook ကို call လုပ်နိုင်အောင်
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  // Preflight OPTIONS request handle လုပ်မယ်
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method === "GET") {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];

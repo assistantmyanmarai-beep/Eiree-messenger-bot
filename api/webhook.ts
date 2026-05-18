@@ -53,9 +53,7 @@ function sanitizeReply(text: string): string {
     .replace(/\[.*?ဖြည့်ပါ.*?\]/g, "")
     .replace(/\[COMMAND:.*?\]/g, "")
     .replace(/\[ACTION:.*?\]/g, "")
-    // FIX: ID: နဲ့ product ID တွေ customer ဆီ မရောက်အောင် ဖယ်မယ်
     .replace(/ID:\d+\s*\|?\s*/g, "")
-    // ပုံ hint phrase တွေ ဖယ်မယ်
     .replace(/ပုံလေးပါ\s*တစ်ပါတည်းကြည့်နိုင်ပါတယ်[^၊။\n]*/g, "")
     .replace(/တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ\s*👇/g, "")
     .replace(/👇/g, "")
@@ -67,6 +65,34 @@ function sanitizeReply(text: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return cleaned || "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ORDER DATA EXTRACTOR
+// Customer message ထဲကနေ name, phone, address ထုတ်ယူမယ်
+// AI action မထွက်တဲ့အခါ fallback အနေနဲ့ သုံးမယ်
+// ═══════════════════════════════════════════════════════════════
+function extractOrderDataFromMessage(messageText: string): {
+  name: string | null;
+  phone: string | null;
+  address: string | null;
+} {
+  const result = { name: null as string | null, phone: null as string | null, address: null as string | null };
+
+  // Phone number pattern: 09xxxxxxxx (7-9 digits)
+  const phoneMatch = messageText.match(/09\d{7,9}/);
+  if (phoneMatch) result.phone = phoneMatch[0];
+
+  // Message ကို lines တွေ ခွဲမယ်
+  const lines = messageText.split(/[\n،,]/).map(l => l.trim()).filter(l => l.length > 1);
+
+  // Phone ပါတဲ့ line မဟုတ်တဲ့ ပထမဆုံး line = name
+  // Phone ပါတဲ့ line မဟုတ်တဲ့ နောက်ဆုံး line = address
+  const nonPhoneLines = lines.filter(l => !l.match(/09\d{7,9}/));
+  if (nonPhoneLines.length >= 1) result.name = nonPhoneLines[0];
+  if (nonPhoneLines.length >= 2) result.address = nonPhoneLines[nonPhoneLines.length - 1];
+
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -265,9 +291,70 @@ async function restoreStock(productId: number, quantity: number) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER
+// ORDER SAVE HELPER
+// AI path နဲ့ Fallback path နှစ်ခုလုံးက ဒီ function ကို သုံးမယ်
 // ═══════════════════════════════════════════════════════════════
-async function saveOrder(orderData: any) {
+async function processSaveOrder(
+  customerId: number,
+  psid: string,
+  name: string,
+  phone: string,
+  address: string,
+  quantity: number,
+  product: any,
+  prefs: any
+) {
+  const isPreorder = product.stock_quantity <= 0;
+  const totalPrice = Number(product.price_mmk) * (quantity || 1);
+  const detectedGender = await detectGenderFromName(name);
+  const finalAddress = detectedGender || prefs.address;
+
+  const order = await saveOrderToDb({
+    customer_id: customerId,
+    product_id: product.id,
+    full_name: name,
+    phone_number: phone,
+    delivery_address: address,
+    quantity: quantity || 1,
+    total_price_mmk: totalPrice,
+    status: isPreorder ? "preorder" : "pending",
+  });
+
+  if (order) {
+    const orderLabel = isPreorder ? "(Pre-order)" : "";
+    await notifyOwnerDashboard(customerId, "new_order",
+      `🛒 အော်ဒါအသစ် ${orderLabel}`,
+      `${name} | ${phone} | ${address} | ${product.name} x${quantity || 1} | ${totalPrice.toLocaleString()} MMK`
+    );
+    await notifyOwnerTelegram(
+      `🛒 အော်ဒါအသစ် ဝင်လာပါပြီ ${orderLabel}\n\n` +
+      `👤 ${sanitizeTelegramText(name)}\n` +
+      `📞 ${sanitizeTelegramText(phone)}\n` +
+      `📍 ${sanitizeTelegramText(address)}\n` +
+      `📦 ${sanitizeTelegramText(product.name)} x${quantity || 1}\n` +
+      `💰 ${totalPrice.toLocaleString()} MMK\n` +
+      `🔑 Customer ID: ${psid}\n\n` +
+      `👉 Dashboard မှာ confirm လုပ်ပေးပါ`
+    );
+    await updateContext(customerId, {
+      preferences: {
+        address: finalAddress,
+        collecting_order: false,
+        pending_product: null,
+        pending_product_id: null,
+        has_active_order: true,
+      },
+    });
+    console.log(`Order saved for customer ${customerId} — product: ${product.name}`);
+    return true;
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ORDER DB
+// ═══════════════════════════════════════════════════════════════
+async function saveOrderToDb(orderData: any) {
   try {
     return await supabaseQuery("orders", "POST", orderData);
   } catch (e: any) {
@@ -377,7 +464,7 @@ async function detectGenderFromName(name: string): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND — Text
+// FACEBOOK SEND
 // ═══════════════════════════════════════════════════════════════
 async function sendMessage(recipientId: string, text: string) {
   try {
@@ -392,9 +479,6 @@ async function sendMessage(recipientId: string, text: string) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND — Image
-// ═══════════════════════════════════════════════════════════════
 async function sendImageMessage(recipientId: string, imageUrl: string): Promise<void> {
   if (!MEDIA_ENABLED || !imageUrl?.trim()) return;
   try {
@@ -414,9 +498,6 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SEND SINGLE PRODUCT IMAGES
-// ═══════════════════════════════════════════════════════════════
 async function sendProductImages(recipientId: string, product: any): Promise<void> {
   if (!MEDIA_ENABLED || !product) return;
   if (product.image_url) await sendImageMessage(recipientId, product.image_url);
@@ -426,17 +507,10 @@ async function sendProductImages(recipientId: string, product: any): Promise<voi
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SEND MULTIPLE PRODUCT IMAGES
-// Customer "အကုန်ပုံပြပါ" ဆိုတဲ့အခါ
-// Product တစ်ခုချင်းစီ နာမည်+ဈေး text ပို့ပြီး ပုံလိုက်ပို့မယ်
-// ═══════════════════════════════════════════════════════════════
 async function sendMultipleProductImages(recipientId: string, productList: any[]): Promise<void> {
   if (!MEDIA_ENABLED || !productList?.length) return;
   for (const product of productList) {
-    await sendMessage(recipientId,
-      `${product.name}\n${Number(product.price_mmk).toLocaleString()} ကျပ်`
-    );
+    await sendMessage(recipientId, `${product.name}\n${Number(product.price_mmk).toLocaleString()} ကျပ်`);
     await new Promise(resolve => setTimeout(resolve, 300));
     if (product.image_url) await sendImageMessage(recipientId, product.image_url);
     if (product.image_url2) {
@@ -481,8 +555,6 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       return { reply: greeting, productToShow: null, productsToShow: [] };
     }
 
-    // FIX: Product list ကို AI ဆီ ပေးတဲ့အခါ ID မပါဘဲ name နဲ့ ဈေးပဲ ပေးမယ်
-    // AI က Customer ဆီ ID တွေ ဖြေမသွားအောင်
     const productListForAI = products.map((p: any) =>
       `• [ID:${p.id}] ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK` +
       (p.description ? ` | ${p.description}` : "") +
@@ -519,11 +591,10 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
 • Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
 • \\n escape sequence တွေ reply ထဲ မထည့်ရ။
-• ⚠️ Product ID တွေ ([ID:x] ပုံစံ) ကို reply ထဲ လုံးဝမထည့်ရ — သင့် internal reference သာဖြစ်သည်${trainingSection}
+• Product ID တွေ ([ID:x]) ကို reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
 
 ━━━ Response Format ━━━
 အမြဲ JSON format နဲ့ respond ရမည်။
-"reply" field ထဲမှာ Customer ဆီပို့မယ့် plain text သာ ထည့်ပါ။
 
 {
   "reply": "Customer ဆီပို့မယ့် plain Myanmar text",
@@ -536,30 +607,25 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
-• "show_product" — Customer က product တစ်ခုတည်း ကြည့်ချင်တဲ့အခါ
-  → product_id ထည့်ပေးပါ ([ID:x] ထဲက x number)
-  ⚠️ reply ထဲမှာ ပုံပို့မည်ဆိုသော hint မထည့်ရ — Code က အလိုအလျောက် ပုံပို့မည်
-• "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်တဲ့အခါ
-  → product_ids: [id1, id2, id3] array ထည့်ပေးပါ
-  ⚠️ reply ထဲမှာ "ပို့ပေးပါမယ်" မထည့်ရ — Code က တစ်ခုချင်းစီ နာမည်+ဈေး+ပုံ ပို့မည်
-  ⚠️ IMPORTANT: Customer က ပုံကြည့်ချင်တာနဲ့ show_products ချက်ချင်းထုတ်ပါ
-    reply ထဲမှာ "ပို့ပေးပါမယ်" ပြောပြီး action မထုတ်ဘဲနေခြင်း တားမြစ်သည်
-• "start_order" — Customer က ဝယ်မယ်ဆိုသောအခါ ချက်ချင်းသုံးပါ
+• "show_product" — Customer က product တစ်ခုတည်း ကြည့်ချင်တဲ့အခါ (product_id ထည့်ပေးပါ)
+• "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်တဲ့အခါ (product_ids array)
+• "start_order" — Customer က ဝယ်မယ်ဆိုပြီး info မပေးသေးတဲ့အခါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
-• "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးမှသာ
+• "save_order" — Customer က name + phone + address ၃ ခုစလုံး ပေးပြီးဆိုရင် ချက်ချင်း သုံးပါ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
-• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း၊ delivery date၊ warranty
+  ⚠️ collected_data ထဲမှာ name, phone, address အပြည့်အစုံ ထည့်ပေးပါ
+• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း
 
 ━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
 
 ━━━ ဈေးနှုန်း Rules ━━━
-⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။ Product ID ကို reply ထဲ မထည့်ရ။
+⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။ Product ID ကို Customer ဆီ မပြောရ။
 ⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
 ⚠️ Stock အကြောင်း လုံးဝမပြောရ။
-⚠️ ပုံပို့မည်ဆိုသော hint ("ပုံလေးပါ တစ်ပါတည်းကြည့်နိုင်ပါတယ် 👇") ကို reply ထဲ လုံးဝမထည့်ရ။
+⚠️ ပုံပို့မည်ဆိုသော hint ကို reply ထဲ မထည့်ရ။
 
-━━━ Products (ID တွေသည် internal reference သာဖြစ်သည် — Customer ဆီ မပြောရ) ━━━
+━━━ Products (ID တွေသည် internal reference သာ) ━━━
 ${productListForAI}`;
 
     const response = await axios.post(
@@ -597,7 +663,6 @@ ${productListForAI}`;
         .replace(/^```\s*/i, "")
         .replace(/```\s*$/i, "")
         .trim();
-
       if (stripped.startsWith("{")) {
         aiResponse = JSON.parse(stripped);
       } else {
@@ -649,7 +714,83 @@ ${productListForAI}`;
       });
     }
 
-    // ── CODE-LEVEL SAFETY NET ──
+    // ════════════════════════════════════════════════════════════
+    // SAVE ORDER — HYBRID APPROACH
+    // Path 1 (AI): AI က save_order action + collected_data ထုတ်ရင်
+    // Path 2 (Code Fallback): AI action မထွက်ဘဲ
+    //   collecting_order=true ဖြစ်နေပြီး
+    //   customer message မှာ phone number ပါနေရင်
+    // ════════════════════════════════════════════════════════════
+
+    // ── PATH 1: AI save_order action ──
+    if (action === "save_order" && aiResponse.collected_data && !prefs.has_active_order) {
+      const { name, phone, address, quantity } = aiResponse.collected_data;
+      if (name && phone && address) {
+        const product =
+          (prefs.pending_product_id ? products.find((p: any) => p.id === prefs.pending_product_id) : null) ||
+          (prefs.pending_product ? products.find((p: any) =>
+            p.name === prefs.pending_product ||
+            p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
+          ) : null) ||
+          (aiResponse.order_data?.product_id ? products.find((p: any) => p.id === aiResponse.order_data.product_id) : null) ||
+          findProductFromHistory(history, products) ||
+          null;
+
+        if (product) {
+          console.log(`[AI PATH] Saving order for customer ${customer.id}`);
+          await processSaveOrder(customer.id, psid, name, phone, address, quantity || 1, product, prefs);
+        } else {
+          await notifyOwnerTelegram(
+            `⚠️ Order product မရှင်းသေး\nCustomer: ${sanitizeTelegramText(name)}\nPhone: ${sanitizeTelegramText(phone)}\n🔑 ID: ${psid}`
+          );
+          await notifyOwnerDashboard(customer.id, "human_support_needed",
+            "⚠️ Product မရှင်းသေး Order",
+            `${name} | ${phone} | ${address}`
+          );
+        }
+      }
+    }
+
+    // ── PATH 2: CODE FALLBACK ──
+    // AI action မထွက်ဘဲ collecting_order=true + phone number ပါနေရင်
+    else if (
+      action !== "save_order" &&
+      !prefs.has_active_order &&
+      prefs.collecting_order &&
+      /09\d{7,9}/.test(messageText)
+    ) {
+      const extracted = extractOrderDataFromMessage(messageText);
+      const { name, phone, address } = extracted;
+
+      if (name && phone && address) {
+        const product =
+          (prefs.pending_product_id ? products.find((p: any) => p.id === prefs.pending_product_id) : null) ||
+          (prefs.pending_product ? products.find((p: any) =>
+            p.name === prefs.pending_product ||
+            p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
+          ) : null) ||
+          findProductFromHistory(history, products) ||
+          null;
+
+        if (product) {
+          console.log(`[FALLBACK PATH] Saving order for customer ${customer.id}`);
+          await processSaveOrder(customer.id, psid, name, phone, address, 1, product, prefs);
+        }
+        // product မတွေ့ရင် AI reply ကိုပဲ ပို့မယ် — owner notify မလုပ်ဘဲ
+      }
+    }
+
+    // ── NOTIFY OWNER ──
+    if (action === "notify_owner") {
+      await notifyOwnerDashboard(customer.id, "human_support_needed",
+        "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`
+      );
+      await notifyOwnerTelegram(
+        `🙋 ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်\n\nCustomer: ${sanitizeTelegramText(messageText)}\n🔑 ID: ${psid}\n\nDashboard မှာ reply လုပ်ပေးပါ`
+      );
+    }
+
+    // ── CODE-LEVEL START ORDER SAFETY NET ──
     if (action === "none" && !prefs.collecting_order && !prefs.has_active_order) {
       const askingForInfo = safeReply.includes("နာမည်") &&
         (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));
@@ -669,97 +810,6 @@ ${productListForAI}`;
       }
     }
 
-    // ── SAVE ORDER ──
-    if (action === "save_order" && aiResponse.collected_data) {
-      if (prefs.has_active_order) {
-        console.log(`Duplicate order blocked for customer ${customer.id}`);
-      } else {
-        const { name, phone, address, quantity } = aiResponse.collected_data;
-        if (name && phone && address) {
-          const product =
-            (prefs.pending_product_id ? products.find((p: any) => p.id === prefs.pending_product_id) : null) ||
-            (prefs.pending_product ? products.find((p: any) =>
-              p.name === prefs.pending_product ||
-              p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
-            ) : null) ||
-            (aiResponse.order_data?.product_id ? products.find((p: any) => p.id === aiResponse.order_data.product_id) : null) ||
-            findProductFromHistory(history, products) ||
-            null;
-
-          if (!product) {
-            await notifyOwnerTelegram(
-              `⚠️ Order တစ်ခု product မရှင်းသေးဘဲ ဝင်လာတယ်\n\n` +
-              `Customer: ${sanitizeTelegramText(name)}\n` +
-              `Phone: ${sanitizeTelegramText(phone)}\n` +
-              `Address: ${sanitizeTelegramText(address)}\n` +
-              `🔑 Customer ID: ${psid}\n\n` +
-              `Dashboard မှာ စစ်ပြီး manual order ဖန်တီးပေးပါ`
-            );
-            await notifyOwnerDashboard(customer.id, "human_support_needed",
-              "⚠️ Product မရှင်းသေး Order",
-              `${name} | ${phone} | ${address} — Product မသေချာ`
-            );
-          } else {
-            const isPreorder = product.stock_quantity <= 0;
-            const totalPrice = Number(product.price_mmk) * (quantity || 1);
-            const detectedGender = await detectGenderFromName(name);
-            const finalAddress = detectedGender || prefs.address;
-
-            const order = await saveOrder({
-              customer_id: customer.id,
-              product_id: product.id,
-              full_name: name,
-              phone_number: phone,
-              delivery_address: address,
-              quantity: quantity || 1,
-              total_price_mmk: totalPrice,
-              status: isPreorder ? "preorder" : "pending",
-            });
-
-            if (order) {
-              const orderLabel = isPreorder ? "(Pre-order)" : "";
-              await notifyOwnerDashboard(customer.id, "new_order",
-                `🛒 အော်ဒါအသစ် ${orderLabel}`,
-                `${name} | ${phone} | ${address} | ${product.name} x${quantity || 1} | ${totalPrice.toLocaleString()} MMK`
-              );
-              await notifyOwnerTelegram(
-                `🛒 အော်ဒါအသစ် ဝင်လာပါပြီ ${orderLabel}\n\n` +
-                `👤 ${sanitizeTelegramText(name)}\n` +
-                `📞 ${sanitizeTelegramText(phone)}\n` +
-                `📍 ${sanitizeTelegramText(address)}\n` +
-                `📦 ${sanitizeTelegramText(product.name)} x${quantity || 1}\n` +
-                `💰 ${totalPrice.toLocaleString()} MMK\n` +
-                `🔑 Customer ID: ${psid}\n\n` +
-                `👉 Dashboard မှာ confirm လုပ်ပေးပါ`
-              );
-              await updateContext(customer.id, {
-                preferences: {
-                  address: finalAddress,
-                  collecting_order: false,
-                  pending_product: null,
-                  pending_product_id: null,
-                  has_active_order: true,
-                },
-              });
-            }
-          }
-        }
-      }
-    }
-
-    // ── NOTIFY OWNER ──
-    if (action === "notify_owner") {
-      await notifyOwnerDashboard(customer.id, "human_support_needed",
-        "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`
-      );
-      await notifyOwnerTelegram(
-        `🙋 ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်\n\n` +
-        `Customer မေးတာ: ${sanitizeTelegramText(messageText)}\n` +
-        `🔑 Customer ID: ${psid}\n\n` +
-        `Dashboard မှာ reply လုပ်ပေးပါ`
-      );
-    }
-
     await saveConversation(customer.id, "customer", messageText);
     await saveConversation(customer.id, "bot", safeReply);
     return { reply: safeReply, productToShow, productsToShow };
@@ -772,7 +822,7 @@ ${productListForAI}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER CONFIRM — Dashboard Confirmed နှိပ်တဲ့အခါ stock နှုတ်မယ်
+// ORDER CONFIRM
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
@@ -795,7 +845,7 @@ async function handleOrderConfirm(body: any): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER CANCEL — Dashboard Cancelled နှိပ်တဲ့အခါ stock ပြန်ထည့်မယ်
+// ORDER CANCEL
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderCancel(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity, was_confirmed } = body;
@@ -822,15 +872,11 @@ async function handleOrderCancel(body: any): Promise<void> {
 // ═══════════════════════════════════════════════════════════════
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
-  // CORS headers — Dashboard က webhook ကို call လုပ်နိုင်အောင်
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // Preflight OPTIONS request handle လုပ်မယ်
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
+  if (req.method === "OPTIONS") return res.status(200).end();
 
   if (req.method === "GET") {
     const mode = req.query["hub.mode"];
@@ -891,16 +937,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   const freshCheck = await supabaseQuery("customers", "GET", null, `psid=eq.${senderId}&select=bot_paused`);
                   if (freshCheck?.[0]?.bot_paused) return;
 
-                  // Text reply ပို့မယ်
                   await sendMessage(senderId, reply);
 
-                  // Single product ပုံ ပို့မယ်
                   if (productToShow) {
                     await new Promise(resolve => setTimeout(resolve, 300));
                     await sendProductImages(senderId, productToShow);
                   }
 
-                  // Multiple products တစ်ခုချင်းစီ ပို့မယ်
                   if (productsToShow.length > 0) {
                     await new Promise(resolve => setTimeout(resolve, 300));
                     await sendMultipleProductImages(senderId, productsToShow);
@@ -910,7 +953,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   const msgType = Object.keys(event.message).filter(k => k !== "mid" && k !== "seq").join(", ");
                   await sendMessage(senderId, "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏");
                   await notifyOwnerDashboard(customer.id, "non_text_message", "📎 Text မဟုတ်တဲ့ Message", `Customer ပို့တာ: ${msgType}`);
-                  await notifyOwnerTelegram(`📎 Text မဟုတ်တဲ့ Message\nအမျိုးအစား: ${msgType}\n🔑 Customer ID: ${senderId}\n👉 Dashboard မှာ ကြည့်ပြီး ပြန်ဆက်သွယ်ပေးပါ`);
+                  await notifyOwnerTelegram(`📎 Text မဟုတ်တဲ့ Message\nအမျိုးအစား: ${msgType}\n🔑 ID: ${senderId}\n👉 Dashboard မှာ ကြည့်ပြီး ပြန်ဆက်သွယ်ပေးပါ`);
                 }
 
               } catch (innerErr: any) {

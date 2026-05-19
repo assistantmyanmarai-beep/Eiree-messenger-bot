@@ -5,5 +5,19 @@
   "rewrites": [
     { "source": "/webhook", "destination": "/api/webhook" },
     { "source": "/privacy", "destination": "/api/privacy" }
+  ],
+  "functions": {
+    "api/webhook.ts": {
+      "maxDuration": 30
+    },
+    "api/cron/check-filters.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/check-filters",
+      "schedule": "0 3 * * *"
+    }
   ]
 }

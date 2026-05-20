@@ -69,8 +69,6 @@ function sanitizeReply(text: string): string {
 
 // ═══════════════════════════════════════════════════════════════
 // ORDER DATA EXTRACTOR
-// Customer message ထဲကနေ name, phone, address ထုတ်ယူမယ်
-// AI action မထွက်တဲ့အခါ fallback အနေနဲ့ သုံးမယ်
 // ═══════════════════════════════════════════════════════════════
 function extractOrderDataFromMessage(messageText: string): {
   name: string | null;
@@ -78,20 +76,12 @@ function extractOrderDataFromMessage(messageText: string): {
   address: string | null;
 } {
   const result = { name: null as string | null, phone: null as string | null, address: null as string | null };
-
-  // Phone number pattern: 09xxxxxxxx (7-9 digits)
   const phoneMatch = messageText.match(/09\d{7,9}/);
   if (phoneMatch) result.phone = phoneMatch[0];
-
-  // Message ကို lines တွေ ခွဲမယ်
   const lines = messageText.split(/[\n،,]/).map(l => l.trim()).filter(l => l.length > 1);
-
-  // Phone ပါတဲ့ line မဟုတ်တဲ့ ပထမဆုံး line = name
-  // Phone ပါတဲ့ line မဟုတ်တဲ့ နောက်ဆုံး line = address
   const nonPhoneLines = lines.filter(l => !l.match(/09\d{7,9}/));
   if (nonPhoneLines.length >= 1) result.name = nonPhoneLines[0];
   if (nonPhoneLines.length >= 2) result.address = nonPhoneLines[nonPhoneLines.length - 1];
-
   return result;
 }
 
@@ -717,9 +707,7 @@ ${productListForAI}`;
     // ════════════════════════════════════════════════════════════
     // SAVE ORDER — HYBRID APPROACH
     // Path 1 (AI): AI က save_order action + collected_data ထုတ်ရင်
-    // Path 2 (Code Fallback): AI action မထွက်ဘဲ
-    //   collecting_order=true ဖြစ်နေပြီး
-    //   customer message မှာ phone number ပါနေရင်
+    // Path 2 (Code Fallback): collecting_order=true + phone ပါနေရင်
     // ════════════════════════════════════════════════════════════
 
     // ── PATH 1: AI save_order action ──
@@ -752,7 +740,6 @@ ${productListForAI}`;
     }
 
     // ── PATH 2: CODE FALLBACK ──
-    // AI action မထွက်ဘဲ collecting_order=true + phone number ပါနေရင်
     else if (
       action !== "save_order" &&
       !prefs.has_active_order &&
@@ -776,7 +763,6 @@ ${productListForAI}`;
           console.log(`[FALLBACK PATH] Saving order for customer ${customer.id}`);
           await processSaveOrder(customer.id, psid, name, phone, address, 1, product, prefs);
         }
-        // product မတွေ့ရင် AI reply ကိုပဲ ပို့မယ် — owner notify မလုပ်ဘဲ
       }
     }
 
@@ -823,19 +809,51 @@ ${productListForAI}`;
 
 // ═══════════════════════════════════════════════════════════════
 // ORDER CONFIRM
+// ── ပြောင်းလဲချက် ──
+// 1. confirmed_at သိမ်းမယ် (orders table + conversation_context)
+// 2. purchased_product data သိမ်းမယ် (Cron Job အတွက်)
+// 3. has_active_order logic မပြောင်း
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
   if (!order_id) return;
   try {
-    await supabaseQuery("orders", "PATCH", { status: "confirmed" }, `id=eq.${order_id}`);
+    const confirmedAt = new Date().toISOString();
+
+    // orders table မှာ status + confirmed_at တစ်ခါတည်း update
+    await supabaseQuery("orders", "PATCH",
+      { status: "confirmed", confirmed_at: confirmedAt },
+      `id=eq.${order_id}`
+    );
+
     if (product_id && quantity) await deductStock(product_id, quantity);
+
     if (customer_psid) {
       const customer = await getOrCreateCustomer(customer_psid);
       if (customer?.id) {
         const context = await getContext(customer.id);
         const prefs = parsePreferences(context?.preferences);
-        await updateContext(customer.id, { preferences: { ...prefs, has_active_order: false } });
+
+        // Cron Job အတွက် product name ဆွဲထုတ်မယ်
+        let purchasedProductName: string | null = null;
+        if (product_id) {
+          const productData = await supabaseQuery(
+            "products", "GET", null, `id=eq.${product_id}&select=name`
+          );
+          purchasedProductName = productData?.[0]?.name || null;
+        }
+
+        // preferences ထဲ purchase data ထပ်ပေါင်းထည့်မယ်
+        // has_active_order နဲ့ order logic တွေ မပြောင်းဘဲ ထပ်ပေါင်းထည့်တာသာ
+        await updateContext(customer.id, {
+          preferences: {
+            ...prefs,
+            has_active_order: false,
+            purchased_product: purchasedProductName,
+            purchased_product_id: product_id || null,
+            confirmed_at: confirmedAt,
+          },
+        });
       }
     }
   } catch (e: any) {
@@ -846,19 +864,30 @@ async function handleOrderConfirm(body: any): Promise<void> {
 
 // ═══════════════════════════════════════════════════════════════
 // ORDER CANCEL
+// Cancel ဆိုရင် purchase data မသိမ်းဘဲ has_active_order: false ပဲ ပြန်ထားမယ်
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderCancel(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity, was_confirmed } = body;
   if (!order_id) return;
   try {
     await supabaseQuery("orders", "PATCH", { status: "cancelled" }, `id=eq.${order_id}`);
+
+    // was_confirmed ဆိုရင်သာ stock ပြန်ထည့်
     if (was_confirmed && product_id && quantity) await restoreStock(product_id, quantity);
+
     if (customer_psid) {
       const customer = await getOrCreateCustomer(customer_psid);
       if (customer?.id) {
         const context = await getContext(customer.id);
         const prefs = parsePreferences(context?.preferences);
-        await updateContext(customer.id, { preferences: { ...prefs, has_active_order: false } });
+
+        // confirmed_at / purchased_product တွေ မထိဘဲ has_active_order: false ပဲ ပြန်ထားမယ်
+        await updateContext(customer.id, {
+          preferences: {
+            ...prefs,
+            has_active_order: false,
+          },
+        });
       }
     }
   } catch (e: any) {

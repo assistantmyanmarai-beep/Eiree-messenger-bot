@@ -110,7 +110,6 @@ async function processOneMonthChecks(): Promise<void> {
 
   for (const order of orders) {
     const psid = (order.customers as { psid: string }).psid;
-    const customerName = order.full_name || "အစ်ကို/အစ်မ";
     const productName = (order.products as { name: string }).name;
 
     // ပို့ပြီးသားဆိုရင် skip — conversation_context check
@@ -126,15 +125,15 @@ async function processOneMonthChecks(): Promise<void> {
       continue;
     }
 
-    // AI Training ID 41 script
+    // AI Training ID 41 script — male character, သဘာဝကျကျ
+    // Gender မသေချာတဲ့အတွက် အကို/အမ မခေါ်ဘဲ ရိုးရိုး message သာ ပို့မယ်
     const message =
-      `မင်္ဂလာပါရှင် ${customerName}... Eiree ရေသန့်စက်လေး တပ်ဆင်ပြီးတာ ၁ လပြည့်သွားပြီမို့ ` +
-      `ရေအရသာလေးနဲ့ ဝန်ဆောင်မှုပိုင်း အဆင်ပြေရဲ့လား သိပါရစေရှင်။ 😍 ` +
-      `လူကြီးမင်းတို့ မိသားစု ကျေနပ်မှုရှိတယ်ဆိုရင်... ` +
-      `အစ်ကိုတို့မိတ်ဆွေတွေကို Eiree စက်လေး ညွှန်းပေးလို့ ဝယ်ယူဖြစ်သွားခဲ့ရင် ` +
-      `အစ်ကိုတို့အတွက် နောက်တစ်ကြိမ်လဲမယ့် Filter တစ်စုံကို ` +
-      `ကျွန်မတို့ဘက်က အခမဲ့ (FOC) လက်ဆောင် လဲလှယ်ပေးသွားမှာဖြစ်ကြောင်း ` +
-      `သတင်းကောင်းပါးပါရစေရှင်။ 🎁✨`;
+      `မင်္ဂလာပါခင်ဗျာ။\n\n` +
+      `Eiree ရေသန့်စက်လေး တပ်ဆင်ပြီးတာ ၁ လပြည့်သွားပြီမို့ ` +
+      `ရေအရသာနဲ့ ဝန်ဆောင်မှုပိုင်း အဆင်ပြေရဲ့လား သိပါရစေခင်ဗျာ။ 😊\n\n` +
+      `မိသားစု ကျေနပ်မှုရှိတယ်ဆိုရင် မိတ်ဆွေတွေကို Eiree စက်လေး ညွှန်းပေးပါနော်။ ` +
+      `ညွှန်းပေးလို့ ဝယ်ယူဖြစ်သွားခဲ့ရင် နောက်တစ်ကြိမ် Filter လဲချိန်မှာ ` +
+      `Filter တစ်စုံ အခမဲ့ (FOC) လဲလှယ်ပေးသွားမှာပါခင်ဗျာ။ 🎁✨`;
 
     const sent = await sendFacebookMessage(psid, message);
 
@@ -155,7 +154,7 @@ async function processOneMonthChecks(): Promise<void> {
         `[Cron Auto-Message] ၁ လပြည့် satisfaction check နဲ့ referral program message ပို့ပြီး။ Product: ${productName}`
       );
 
-      console.log(`[Cron 1-month] Sent to ${customerName} (PSID: ${psid}) — ${productName}`);
+      console.log(`[Cron 1-month] Sent to PSID: ${psid} — ${productName}`);
     }
   }
 }
@@ -196,7 +195,6 @@ async function processSixMonthChecks(): Promise<void> {
 
   for (const order of orders) {
     const psid = (order.customers as { psid: string }).psid;
-    const customerName = order.full_name || "အစ်ကို/အစ်မ";
     const productName = (order.products as { name: string }).name;
 
     // ပို့ပြီးသားဆိုရင် skip
@@ -212,14 +210,14 @@ async function processSixMonthChecks(): Promise<void> {
       continue;
     }
 
-    // AI Training ID 42 script
+    // Client ID 42 script အခြေခံ — male character, သဘာဝကျကျ
+    // Gender မသေချာတဲ့အတွက် အကို/အမ မခေါ်ဘဲ ရိုးရိုး message သာ ပို့မယ်
     const message =
-      `မင်္ဂလာပါရှင် ${customerName}... ` +
-      `အစ်ကိုတို့အိမ်မှာ Eiree စက်လေး သုံးလာတာ ၆ လပြည့်တော့မှာဖြစ်လို့ ` +
+      `မင်္ဂလာပါခင်ဗျာ။\n\n` +
+      `Eiree စက်လေး သုံးလာတာ ၆ လပြည့်တော့မှာဖြစ်လို့ ` +
       `ရေထွက်အားနဲ့ သန့်စင်မှုအဆင့် မကျသွားအောင် ` +
-      `ကာဗွန် Filter လေး လဲလှယ်ပေးဖို့ အချိန်တန်ပါပြီရှင်။ 💧 ` +
-      `ကျွန်မတို့ရဲ့ ကျွမ်းကျင် Technician အဖွဲ့က အိမ်အရောက် ` +
-      `လာရောက်လဲလှယ်ပေးဖို့ ဘယ်နေ့၊ ဘယ်အချိန်လေး အဆင်ပြေမလဲရှင်။`;
+      `Carbon Filter လဲလှယ်ပေးဖို့ အချိန်တန်ပါပြီခင်ဗျာ။ 💧\n\n` +
+      `Filter အသစ်လဲလှယ်မည်ဆိုပါက အိမ်အရောက် Delivery အခမဲ့ ပို့ပေးပါတယ်ခင်ဗျာ။`;
 
     const sent = await sendFacebookMessage(psid, message);
 
@@ -240,7 +238,7 @@ async function processSixMonthChecks(): Promise<void> {
         `[Cron Auto-Message] ၆ လပြည့် Carbon Filter လဲဖို့ reminder ပို့ပြီး။ Product: ${productName}`
       );
 
-      console.log(`[Cron 6-month] Sent to ${customerName} (PSID: ${psid}) — ${productName}`);
+      console.log(`[Cron 6-month] Sent to PSID: ${psid} — ${productName}`);
     }
   }
 }

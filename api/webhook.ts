@@ -44,12 +44,8 @@ function sanitizeTelegramText(text: string): string {
 function sanitizeReply(text: string): string {
   if (!text) return "";
   let cleaned = text
-    // မြန်မာဂဏန်း normalize
     .replace(/\\n/g, "\n")
     .replace(/\\t/g, " ")
-    // "reply": "..." ပုံစံ အားလုံး ဖယ်မယ်
-    .replace(/^["']?reply["']?\s*:\s*["']/im, "")
-    .replace(/["']\s*,?\s*["']?action["']?[\s\S]*/im, "")
     // JSON block တွေ ဖယ်မယ်
     .replace(/^\s*\{[\s\S]*\}\s*$/gm, "")
     .replace(/\{[\s\S]*?"reply"[\s\S]*?\}/g, "")
@@ -83,8 +79,6 @@ function sanitizeReply(text: string): string {
     .replace(/^[\*\-]\s+/gm, "")
     .replace(/^\d+\.\s+/gm, "")
     .replace(/#{1,6}\s/g, "")
-    // Double quotes ဖယ်မယ်
-    .replace(/^["']|["']$/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return cleaned || "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";

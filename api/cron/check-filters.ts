@@ -152,10 +152,9 @@ async function processOneMonthChecks(): Promise<void> {
         confirmed_at: order.confirmed_at,
         one_month_check_sent_at: sentAt,
       });
-      await logBotMessage(
-        order.customer_id,
-        `[Cron Auto-Message] ၁ လပြည့် satisfaction check နဲ့ referral program message ပို့ပြီး။ Product: ${productName}`
-      );
+      // conversations table ထဲ တကယ်ပို့လိုက်တဲ့ message text ကိုသွင်းမယ်
+      // Dashboard မှာ Messenger မှာပို့ထားသလိုပဲ မြင်ရမယ်
+      await logBotMessage(order.customer_id, message);
       console.log(`[Cron 1-month] Sent to PSID: ${psid} — ${productName}`);
     }
   }
@@ -221,10 +220,8 @@ async function processSixMonthChecks(): Promise<void> {
         confirmed_at: order.confirmed_at,
         filter_reminder_sent_at: sentAt,
       });
-      await logBotMessage(
-        order.customer_id,
-        `[Cron Auto-Message] ၆ လပြည့် Carbon Filter လဲဖို့ reminder ပို့ပြီး။ Product: ${productName}`
-      );
+      // conversations table ထဲ တကယ်ပို့လိုက်တဲ့ message text ကိုသွင်းမယ်
+      await logBotMessage(order.customer_id, message);
       console.log(`[Cron 6-month] Sent to PSID: ${psid} — ${productName}`);
     }
   }

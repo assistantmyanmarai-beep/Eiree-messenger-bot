@@ -19,7 +19,7 @@ const MEDIA_ENABLED = true;
 
 // ═══════════════════════════════════════════════════════════════
 // MYANMAR NUMBER NORMALIZER
-// မြန်မာဂဏန်း → အင်္ဂလိပ်ဂဏန်း ပြောင်းမယ်
+// မြန်မာဂဏန်း → အင်္ဂလိပ်ဂဏန်း
 // ═══════════════════════════════════════════════════════════════
 function normalizeMyanmarNumbers(text: string): string {
   return text
@@ -27,6 +27,49 @@ function normalizeMyanmarNumbers(text: string): string {
     .replace(/၃/g, "3").replace(/၄/g, "4").replace(/၅/g, "5")
     .replace(/၆/g, "6").replace(/၇/g, "7").replace(/၈/g, "8")
     .replace(/၉/g, "9");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GENDER DETECT FROM SPEECH PATTERN
+// စကားပြောပုံစံကြည့်ပြီး gender ခန့်မှန်းမယ်
+// "ရှင့်" သုံးရင် → female
+// "ဗျ" / "ကွ" / "ဗျာ" → male
+// မသေချာရင် → ""
+// ═══════════════════════════════════════════════════════════════
+function detectGenderFromSpeechPattern(text: string): string {
+  if (!text) return "";
+  // Female indicators
+  if (/ရှင့်|ရှင်|နော်\s*$|ကွယ်/.test(text)) return "female";
+  // Male indicators
+  if (/ဗျ\s*$|ဗျာ\s*$|ကွ\s*$|ကွာ\s*$|ဟဲ\s*$/.test(text)) return "male";
+  return "";
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GENDER DETECT FROM NAME (AI)
+// ═══════════════════════════════════════════════════════════════
+async function detectGenderFromName(name: string): Promise<string> {
+  if (!name || name.length < 2) return "";
+  try {
+    const response = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: "google/gemini-2.5-flash",
+        messages: [{
+          role: "user",
+          content: `နာမည် "${name}" က ယောကျ်ားလေးလား မိန်းကလေးလား? JSON format နဲ့သာ:\n{"gender":"male"} or {"gender":"female"} or {"gender":"unknown"}`,
+        }],
+        max_tokens: 20,
+        temperature: 0.1,
+      },
+      { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" }, timeout: 5000 }
+    );
+    const raw = response.data.choices[0]?.message?.content || "{}";
+    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+    if (parsed.gender === "male") return "male";
+    if (parsed.gender === "female") return "female";
+    return "";
+  } catch { return ""; }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -39,22 +82,18 @@ function sanitizeTelegramText(text: string): string {
 
 // ═══════════════════════════════════════════════════════════════
 // OUTPUT SANITIZER
-// Customer ဆီ ပို့တဲ့ reply ထဲမှာ code/json/symbols မပါအောင်
 // ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
   let cleaned = text
     .replace(/\\n/g, "\n")
     .replace(/\\t/g, " ")
-    // JSON block တွေ ဖယ်မယ်
     .replace(/^\s*\{[\s\S]*\}\s*$/gm, "")
     .replace(/\{[\s\S]*?"reply"[\s\S]*?\}/g, "")
     .replace(/```json[\s\S]*?```/gi, "")
     .replace(/```[\s\S]*?```/gi, "")
-    // JSON key တွေ ဖယ်မယ်
     .replace(/"(reply|action|product_id|product_ids|order_data|collected_data)":\s*(?:"[^"]*"|\{[^}]*\}|\[[^\]]*\]|null|true|false|\d+),?\s*/gi, "")
     .replace(/^\s*[{}[\]]\s*$/gm, "")
-    // Custom tags ဖယ်မယ်
     .replace(/NEED_FOLLOW_UP:\[.*?\]/gs, "")
     .replace(/NEED_FOLLOW_UP:[^\n]*/g, "")
     .replace(/PRICE_UNCERTAIN:[^\n]*/g, "")
@@ -73,7 +112,6 @@ function sanitizeReply(text: string): string {
     .replace(/ပုံလေးပါ\s*တစ်ပါတည်းကြည့်နိုင်ပါတယ်[^၊။\n]*/g, "")
     .replace(/တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ\s*👇/g, "")
     .replace(/👇/g, "")
-    // Markdown ဖယ်မယ်
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/\*(.*?)\*/g, "$1")
     .replace(/^[\*\-]\s+/gm, "")
@@ -86,7 +124,6 @@ function sanitizeReply(text: string): string {
 
 // ═══════════════════════════════════════════════════════════════
 // ORDER DATA EXTRACTOR
-// မြန်မာဂဏန်းပါ phone ဖမ်းနိုင်အောင် normalize လုပ်မယ်
 // ═══════════════════════════════════════════════════════════════
 function extractOrderDataFromMessage(messageText: string): {
   name: string | null;
@@ -94,20 +131,13 @@ function extractOrderDataFromMessage(messageText: string): {
   address: string | null;
 } {
   const result = { name: null as string | null, phone: null as string | null, address: null as string | null };
-
-  // မြန်မာဂဏန်း normalize ပြီးမှ phone ဖမ်းမယ်
   const normalizedText = normalizeMyanmarNumbers(messageText).replace(/\s+/g, "");
   const phoneMatch = normalizedText.match(/09\d{7,9}/);
   if (phoneMatch) result.phone = phoneMatch[0];
-
-  // Original text မှာ lines ခွဲမယ်
   const lines = messageText.split(/[\n،,]/).map(l => l.trim()).filter(l => l.length > 1);
-
-  // Phone ပါတဲ့ line စစ်တဲ့အခါလည်း normalize လုပ်ပြီး စစ်မယ်
   const nonPhoneLines = lines.filter(l => !normalizeMyanmarNumbers(l).replace(/\s+/g, "").match(/09\d{7,9}/));
   if (nonPhoneLines.length >= 1) result.name = nonPhoneLines[0];
   if (nonPhoneLines.length >= 2) result.address = nonPhoneLines[nonPhoneLines.length - 1];
-
   return result;
 }
 
@@ -321,8 +351,13 @@ async function processSaveOrder(
 ) {
   const isPreorder = product.stock_quantity <= 0;
   const totalPrice = Number(product.price_mmk) * (quantity || 1);
-  const detectedGender = await detectGenderFromName(name);
-  const finalAddress = detectedGender || prefs.address;
+
+  // Gender detect from name (AI)
+  const genderFromName = await detectGenderFromName(name);
+  // Combine: name-based gender > existing speech-pattern gender
+  const existingGender = prefs.detected_gender || "";
+  const finalGender = genderFromName || existingGender;
+  const genderTitle = finalGender === "male" ? "အကို" : finalGender === "female" ? "အမ" : "";
 
   const order = await saveOrderToDb({
     customer_id: customerId,
@@ -351,13 +386,17 @@ async function processSaveOrder(
       `🔑 Customer ID: ${psid}\n\n` +
       `👉 Dashboard မှာ confirm လုပ်ပေးပါ`
     );
+    // Context update — gender သပ်သပ် သိမ်းမယ်၊ address နဲ့ မရောတော့ဘူး
     await updateContext(customerId, {
       preferences: {
-        address: finalAddress,
+        address: "",
         collecting_order: false,
         pending_product: null,
         pending_product_id: null,
         has_active_order: true,
+        detected_gender: finalGender,
+        customer_name: name,
+        gender_title: genderTitle,
       },
     });
     console.log(`Order saved for customer ${customerId} — product: ${product.name}`);
@@ -414,20 +453,25 @@ function parsePreferences(preferences: any) {
     pending_product: null as string | null,
     pending_product_id: null as number | null,
     has_active_order: false,
+    detected_gender: "" as string,
+    customer_name: "" as string,
+    gender_title: "" as string,
   };
   if (!preferences) return defaults;
   try {
     const p = typeof preferences === "string" && preferences.startsWith("{")
       ? JSON.parse(preferences)
       : typeof preferences === "object" ? preferences : null;
-    if (!p) return typeof preferences === "string" && preferences !== "pending"
-      ? { ...defaults, address: preferences } : defaults;
+    if (!p) return defaults;
     return {
       address: p.address ?? "",
       collecting_order: p.collecting_order || false,
       pending_product: p.pending_product || null,
       pending_product_id: p.pending_product_id || null,
       has_active_order: p.has_active_order || false,
+      detected_gender: p.detected_gender || "",
+      customer_name: p.customer_name || "",
+      gender_title: p.gender_title || "",
     };
   } catch { return defaults; }
 }
@@ -449,33 +493,6 @@ async function getActiveTrainingInstructions(): Promise<string> {
     console.error("getActiveTrainingInstructions error:", e.message);
     return "";
   }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// GENDER DETECTION
-// ═══════════════════════════════════════════════════════════════
-async function detectGenderFromName(name: string): Promise<string> {
-  if (!name || name.length < 2) return "";
-  try {
-    const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "google/gemini-2.5-flash",
-        messages: [{
-          role: "user",
-          content: `နာမည် "${name}" က ယောကျ်ားလေးလား မိန်းကလေးလား? JSON format နဲ့သာ:\n{"gender":"male"} or {"gender":"female"} or {"gender":"unknown"}`,
-        }],
-        max_tokens: 20,
-        temperature: 0.1,
-      },
-      { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" }, timeout: 5000 }
-    );
-    const raw = response.data.choices[0]?.message?.content || "{}";
-    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
-    if (parsed.gender === "male") return "အကို";
-    if (parsed.gender === "female") return "အမ";
-    return "";
-  } catch { return ""; }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -559,10 +576,36 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
     const prefs = parsePreferences(context?.preferences);
 
+    // ── Speech pattern gender detect ──
+    // Customer message ကနေ gender hint ရှာမယ်
+    // Context ထဲ detected_gender မရှိသေးရင်သာ detect လုပ်မယ်
+    if (!prefs.detected_gender) {
+      const speechGender = detectGenderFromSpeechPattern(messageText);
+      if (speechGender) {
+        const genderTitle = speechGender === "male" ? "အကို" : "အမ";
+        await updateContext(customer.id, {
+          preferences: {
+            ...prefs,
+            detected_gender: speechGender,
+            gender_title: genderTitle,
+          },
+        });
+        prefs.detected_gender = speechGender;
+        prefs.gender_title = genderTitle;
+      }
+    }
+
     // ── First-time greeting ──
     if (!context?.preferences && history.length === 0) {
       await updateContext(customer.id, {
-        preferences: { address: "", collecting_order: false, has_active_order: false },
+        preferences: {
+          address: "",
+          collecting_order: false,
+          has_active_order: false,
+          detected_gender: "",
+          customer_name: "",
+          gender_title: "",
+        },
       });
       const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
       await saveConversation(customer.id, "customer", messageText);
@@ -582,12 +625,18 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       content: h.message_text,
     }));
 
-    // ── Gender-aware address rule ──
-    // prefs.address မှာ "အကို" / "အမ" သိမ်းထားပြီးဆိုရင် သုံးမယ်
-    const genderTitle = prefs.address === "အကို" || prefs.address === "အမ" ? prefs.address : "";
-    const addressRule = genderTitle
-      ? `Customer ကို "${genderTitle}" ဟု ယဉ်ကျေးစွာ ခေါ်ပါ။`
-      : `Customer ရဲ့ နာမည်ရပြီဆိုရင် gender စစ်ပြီး "အကို [နာမည်]" သို့မဟုတ် "အမ [နာမည်]" ဆိုပြီး ခေါ်ပါ။ မသေချာရင် နာမည်မပါဘဲ ယဉ်ကျေးစွာ ဆက်သွယ်ပါ။`;
+    // ── Address rule based on detected gender ──
+    // gender_title သိပြီဆိုရင် → အဲဒါသုံးမယ်
+    // customer_name ရှိပြီဆိုရင် → "gender_title နာမည်" ဟု ခေါ်မယ်
+    // မသိသေးရင် → neutral ဆက်သွယ်မယ်
+    let addressRule = "";
+    if (prefs.gender_title && prefs.customer_name) {
+      addressRule = `Customer ကို "${prefs.gender_title} ${prefs.customer_name}" ဟုသာ ခေါ်ပါ။`;
+    } else if (prefs.gender_title) {
+      addressRule = `Customer ကို "${prefs.gender_title}" ဟုသာ ခေါ်ပါ။`;
+    } else {
+      addressRule = `Customer gender မသေချာသေးသောကြောင့် နာမ်စားဖြင့် မခေါ်ပါနဲ့။ ယဉ်ကျေးစွာ ဆက်သွယ်ပါ။ Customer ရဲ့ နာမည် ရပြီဆိုရင် gender စစ်ပြီးမှ ခေါ်ပါ။`;
+    }
 
     const orderContext = prefs.collecting_order
       ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။`
@@ -603,19 +652,17 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
-━━━ စကားပြောပုံစံ (အရေးအကြီးဆုံး) ━━━
+━━━ Customer ဆက်သွယ်ပုံ ━━━
 • ${addressRule}
-• "ရှင့်" "ခင်ဗျာရဲ့" "ခင်ဗျားရဲ့" စသည့် ရိုင်းသော နာမ်စားများ လုံးဝမသုံးရ။
+• "ရှင့်" "ခင်ဗျားရဲ့" ကဲ့သို့ ရိုင်းသော နာမ်စားများ လုံးဝမသုံးရ။
 • မိမိကိုယ်ကို "ကျွန်တော်" ဟုသာ ရည်ညွှန်းပါ။
-• Customer နာမည်ကို "အကို [နာမည်]" / "အမ [နာမည်]" ဆိုပြီးသာ ခေါ်ပါ၊ နာမည်တိုက်ရိုက် မခေါ်ရ။
-• သဘာဝကျကျ၊ နွေးထွေးစွာ၊ ပရော်ဖက်ရှင်နယ်ဆန်ဆန် ပြောပါ။
-• Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
+• သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
 • Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
 • \\n escape sequence တွေ reply ထဲ မထည့်ရ။
 • Product ID တွေ ([ID:x]) ကို reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
 
 ━━━ Response Format ━━━
-အမြဲ JSON format နဲ့ respond ရမည်။ JSON key/value တွေ reply text ထဲ မပါရ။
+အမြဲ JSON format နဲ့ respond ရမည်။ JSON key/value တွေ "reply" text ထဲ လုံးဝမပါရ။
 
 {
   "reply": "Customer ဆီပို့မယ့် plain Myanmar text သာ",
@@ -628,16 +675,16 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
-• "show_product" — Customer က product တစ်ခုတည်းရဲ့ ပုံကြည့်ချင်တဲ့အခါ၊ သို့မဟုတ် product တစ်ခုတည်းအကြောင်း အသေးစိတ်သိချင်တဲ့အခါ (product_id ထည့်ပေးပါ) — system က ပုံကို အလိုအလျောက် ပို့ပေးမယ်
-• "show_products" — Customer က product တစ်ခုထက်ပိုပြီး ပုံကြည့်ချင်တဲ့အခါ (product_ids array ထည့်ပေးပါ) — system က ပုံများကို အလိုအလျောက် ပို့ပေးမယ်
-⚠️ CRITICAL: Customer က ပုံကြည့်ချင်တဲ့အခါ reply ထဲမှာ "ပုံပို့လို့မရ" ဆိုတဲ့ စကားလုံး လုံးဝမပါရ — show_product သို့မဟုတ် show_products action သုံးလိုက်ရုံပဲ
-• "start_order" — ဝယ်မယ်ဆိုပြီး info မပေးသေးတဲ့အခါ
+• "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
+  ⚠️ reply ထဲမှာ ပုံပို့မည်ဆိုသော hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
+• "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်သောအခါ (product_ids array)
+  ⚠️ reply ထဲမှာ ပုံပို့မည်ဆိုသော hint မထည့်ရ — system က တစ်ခုချင်းစီ ပုံပို့မည်
+• "start_order" — Customer က ဝယ်မည်ဆိုပြီး info မပေးသေးသောအခါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
-  ⚠️ collected_data ထဲမှာ name, phone, address အပြည့်အစုံ ထည့်ပေးပါ
-  ⚠️ phone number မှာ မြန်မာဂဏန်း (၀၉...) ပါလာရင် အင်္ဂလိပ်ဂဏန်း (09...) အဖြစ် ပြောင်းပြီး သိမ်းပါ
-• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း
+  ⚠️ collected_data ထဲ phone မှာ မြန်မာဂဏန်းပါရင် 09... အဖြစ် ပြောင်းပြီး ထည့်ပေးပါ
+• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း၊ delivery date
 
 ━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
@@ -646,9 +693,8 @@ ${orderContext}${activeOrderWarning}
 ⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။ Product ID ကို Customer ဆီ မပြောရ။
 ⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
 ⚠️ Stock အကြောင်း လုံးဝမပြောရ။
-⚠️ ပုံပို့မည်ဆိုသော hint ကို reply ထဲ မထည့်ရ။
 
-━━━ Products ━━━
+━━━ Products (internal reference only) ━━━
 ${productListForAI}`;
 
     const response = await axios.post(
@@ -660,7 +706,7 @@ ${productListForAI}`;
           ...historyMessages,
           { role: "user", content: messageText },
         ],
-        max_tokens: 500,
+        max_tokens: 800,
         temperature: 0.7,
       },
       {
@@ -728,7 +774,7 @@ ${productListForAI}`;
 
       await updateContext(customer.id, {
         preferences: {
-          address: prefs.address,
+          ...prefs,
           collecting_order: true,
           pending_product: product?.name || aiResponse.order_data.product_name || null,
           pending_product_id: product?.id || null,
@@ -737,17 +783,15 @@ ${productListForAI}`;
       });
     }
 
-    // ════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════
     // SAVE ORDER — HYBRID APPROACH
     // Path 1 (AI): AI က save_order + collected_data ထုတ်ရင်
     // Path 2 (Fallback): collecting_order=true + phone ပါနေရင်
-    // ════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════
 
     // ── PATH 1: AI save_order ──
     if (action === "save_order" && aiResponse.collected_data && !prefs.has_active_order) {
       const { name, phone, address, quantity } = aiResponse.collected_data;
-      // AI က collected_data ထဲ phone ကို normalize လုပ်ပြီး ပေးရမယ်လို့ မှာထားပြီ
-      // ဒါပေမယ့် safety အတွက် ဒီမှာလည်း normalize ထပ်လုပ်မယ်
       const normalizedPhone = phone ? normalizeMyanmarNumbers(phone).replace(/\s+/g, "") : phone;
       if (name && normalizedPhone && address) {
         const product =
@@ -821,7 +865,7 @@ ${productListForAI}`;
         if (productFromHistory) {
           await updateContext(customer.id, {
             preferences: {
-              address: prefs.address,
+              ...prefs,
               collecting_order: true,
               pending_product: productFromHistory.name,
               pending_product_id: productFromHistory.id,
@@ -844,35 +888,28 @@ ${productListForAI}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ORDER CONFIRM
+// ORDER CONFIRM — confirmed_at သိမ်းမယ်
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
   if (!order_id) return;
   try {
     const confirmedAt = new Date().toISOString();
-
     await supabaseQuery("orders", "PATCH",
       { status: "confirmed", confirmed_at: confirmedAt },
       `id=eq.${order_id}`
     );
-
     if (product_id && quantity) await deductStock(product_id, quantity);
-
     if (customer_psid) {
       const customer = await getOrCreateCustomer(customer_psid);
       if (customer?.id) {
         const context = await getContext(customer.id);
         const prefs = parsePreferences(context?.preferences);
-
         let purchasedProductName: string | null = null;
         if (product_id) {
-          const productData = await supabaseQuery(
-            "products", "GET", null, `id=eq.${product_id}&select=name`
-          );
+          const productData = await supabaseQuery("products", "GET", null, `id=eq.${product_id}&select=name`);
           purchasedProductName = productData?.[0]?.name || null;
         }
-
         await updateContext(customer.id, {
           preferences: {
             ...prefs,
@@ -898,19 +935,14 @@ async function handleOrderCancel(body: any): Promise<void> {
   if (!order_id) return;
   try {
     await supabaseQuery("orders", "PATCH", { status: "cancelled" }, `id=eq.${order_id}`);
-
     if (was_confirmed && product_id && quantity) await restoreStock(product_id, quantity);
-
     if (customer_psid) {
       const customer = await getOrCreateCustomer(customer_psid);
       if (customer?.id) {
         const context = await getContext(customer.id);
         const prefs = parsePreferences(context?.preferences);
         await updateContext(customer.id, {
-          preferences: {
-            ...prefs,
-            has_active_order: false,
-          },
+          preferences: { ...prefs, has_active_order: false },
         });
       }
     }

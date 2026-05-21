@@ -628,8 +628,9 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
-• "show_product" — product တစ်ခုတည်း ကြည့်ချင်တဲ့အခါ
-• "show_products" — product အများကြီး ကြည့်ချင်တဲ့အခါ
+• "show_product" — Customer က product တစ်ခုတည်းရဲ့ ပုံကြည့်ချင်တဲ့အခါ၊ သို့မဟုတ် product တစ်ခုတည်းအကြောင်း အသေးစိတ်သိချင်တဲ့အခါ (product_id ထည့်ပေးပါ) — system က ပုံကို အလိုအလျောက် ပို့ပေးမယ်
+• "show_products" — Customer က product တစ်ခုထက်ပိုပြီး ပုံကြည့်ချင်တဲ့အခါ (product_ids array ထည့်ပေးပါ) — system က ပုံများကို အလိုအလျောက် ပို့ပေးမယ်
+⚠️ CRITICAL: Customer က ပုံကြည့်ချင်တဲ့အခါ reply ထဲမှာ "ပုံပို့လို့မရ" ဆိုတဲ့ စကားလုံး လုံးဝမပါရ — show_product သို့မဟုတ် show_products action သုံးလိုက်ရုံပဲ
 • "start_order" — ဝယ်မယ်ဆိုပြီး info မပေးသေးတဲ့အခါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ

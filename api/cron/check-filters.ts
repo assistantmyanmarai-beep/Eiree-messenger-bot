@@ -1,70 +1,86 @@
-import { createClient } from "@supabase/supabase-js";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import axios from "axios";
 
-// ─── Supabase Client ───────────────────────────────────────────────────────────
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// ═══════════════════════════════════════════════════════════════
+// ENVIRONMENT VARIABLES
+// ═══════════════════════════════════════════════════════════════
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const FACEBOOK_PAGE_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+const CRON_SECRET = process.env.CRON_SECRET;
 
-// ─── Facebook Message Sender ───────────────────────────────────────────────────
-async function sendFacebookMessage(
-  psid: string,
-  text: string
-): Promise<boolean> {
+// ═══════════════════════════════════════════════════════════════
+// SUPABASE HELPER — webhook.ts နဲ့ အတူတူပဲ axios သုံးမယ်
+// ═══════════════════════════════════════════════════════════════
+async function supabaseQuery(table: string, method: string, body?: any, query?: string) {
+  const url = `${SUPABASE_URL}/rest/v1/${table}${query ? `?${query}` : ""}`;
+  const headers: any = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation",
+  };
   try {
-    const res = await fetch(
-      `https://graph.facebook.com/v19.0/me/messages?access_token=${process.env.FACEBOOK_PAGE_ACCESS_TOKEN}`,
+    if (method === "GET") return (await axios.get(url, { headers })).data;
+    if (method === "POST") return (await axios.post(url, body, { headers })).data;
+    if (method === "PATCH") return (await axios.patch(url, body, { headers })).data;
+  } catch (error: any) {
+    console.error(`Supabase ${method} ${table} error:`, error?.response?.data || error.message);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FACEBOOK MESSAGE SENDER
+// POST_PURCHASE_UPDATE tag — ဝယ်ပြီးသား customer ကို proactive ပို့ဖို့
+// ═══════════════════════════════════════════════════════════════
+async function sendFacebookMessage(psid: string, text: string): Promise<boolean> {
+  try {
+    const res = await axios.post(
+      `https://graph.facebook.com/v19.0/me/messages`,
       {
-        method: "POST",
+        recipient: { id: psid },
+        message: { text },
+        messaging_type: "MESSAGE_TAG",
+        tag: "POST_PURCHASE_UPDATE",
+      },
+      {
+        params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN },
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipient: { id: psid },
-          message: { text },
-          // POST_PURCHASE_UPDATE — ဝယ်ပြီးသား customer ကို proactive message ပို့ဖို့ Message Tag သုံးတယ်
-          messaging_type: "MESSAGE_TAG",
-          tag: "POST_PURCHASE_UPDATE",
-        }),
       }
     );
-
-    if (!res.ok) {
-      const err = await res.json();
-      console.error(`[Cron] Facebook send failed for PSID ${psid}:`, err);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.error(`[Cron] Facebook send error for PSID ${psid}:`, err);
+    return res.status === 200;
+  } catch (err: any) {
+    console.error(`[Cron] Facebook send failed for PSID ${psid}:`, err?.response?.data || err.message);
     return false;
   }
 }
 
-// ─── conversation_context preferences update ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// conversation_context preferences update
+// ═══════════════════════════════════════════════════════════════
 async function updateContextPreferences(
   customerId: string,
   updates: Record<string, unknown>
 ): Promise<void> {
-  // လက်ရှိ preferences ဆွဲထုတ်မယ်
-  const { data: existing } = await supabase
-    .from("conversation_context")
-    .select("preferences")
-    .eq("customer_id", customerId)
-    .single();
-
-  const currentPrefs = existing?.preferences ?? {};
+  const existing = await supabaseQuery(
+    "conversation_context", "GET", null, `customer_id=eq.${customerId}&select=preferences`
+  );
+  const currentPrefs = existing?.[0]?.preferences ?? {};
   const newPrefs = { ...currentPrefs, ...updates };
-
-  await supabase
-    .from("conversation_context")
-    .upsert({ customer_id: customerId, preferences: newPrefs, updated_at: new Date().toISOString() });
+  await supabaseQuery(
+    "conversation_context", "PATCH",
+    { preferences: newPrefs, updated_at: new Date().toISOString() },
+    `customer_id=eq.${customerId}`
+  );
 }
 
-// ─── conversations table ထဲ bot log သွင်းမယ် ─────────────────────────────────
-async function logBotMessage(
-  customerId: string,
-  messageText: string
-): Promise<void> {
-  await supabase.from("conversations").insert({
+// ═══════════════════════════════════════════════════════════════
+// conversations table ထဲ bot log သွင်းမယ်
+// AI က Cron ဘာပို့သွားတယ်ဆိုတာ context ထဲ မြင်နိုင်မယ်
+// ═══════════════════════════════════════════════════════════════
+async function logBotMessage(customerId: string, messageText: string): Promise<void> {
+  await supabaseQuery("conversations", "POST", {
     customer_id: customerId,
     message_type: "bot",
     message_text: messageText,
@@ -73,35 +89,20 @@ async function logBotMessage(
   });
 }
 
-// ─── 1-Month Check ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// 1-MONTH CHECK — Satisfaction + Referral
+// ═══════════════════════════════════════════════════════════════
 async function processOneMonthChecks(): Promise<void> {
   const now = new Date();
-  // 1 လပြည့်တဲ့ range — 30 days ±1 day tolerance
   const from = new Date(now);
   from.setDate(from.getDate() - 31);
   const to = new Date(now);
   to.setDate(to.getDate() - 29);
 
-  // confirmed orders ထဲက 1 လပြည့်တာ ဆွဲထုတ်မယ်
-  const { data: orders, error } = await supabase
-    .from("orders")
-    .select(`
-      id,
-      customer_id,
-      full_name,
-      product_id,
-      confirmed_at,
-      customers!inner(psid),
-      products!inner(name)
-    `)
-    .eq("status", "confirmed")
-    .gte("confirmed_at", from.toISOString())
-    .lte("confirmed_at", to.toISOString());
-
-  if (error) {
-    console.error("[Cron 1-month] Query error:", error);
-    return;
-  }
+  const orders = await supabaseQuery(
+    "orders", "GET", null,
+    `status=eq.confirmed&confirmed_at=gte.${from.toISOString()}&confirmed_at=lte.${to.toISOString()}&select=id,customer_id,product_id,confirmed_at`
+  );
 
   if (!orders || orders.length === 0) {
     console.log("[Cron 1-month] No customers to follow up today.");
@@ -109,24 +110,30 @@ async function processOneMonthChecks(): Promise<void> {
   }
 
   for (const order of orders) {
-    const psid = (order.customers as { psid: string }).psid;
-    const productName = (order.products as { name: string }).name;
+    // Customer PSID ဆွဲထုတ်မယ်
+    const customerData = await supabaseQuery(
+      "customers", "GET", null, `id=eq.${order.customer_id}&select=psid`
+    );
+    const psid = customerData?.[0]?.psid;
+    if (!psid) continue;
 
-    // ပို့ပြီးသားဆိုရင် skip — conversation_context check
-    const { data: ctx } = await supabase
-      .from("conversation_context")
-      .select("preferences")
-      .eq("customer_id", order.customer_id)
-      .single();
+    // Product name ဆွဲထုတ်မယ်
+    const productData = await supabaseQuery(
+      "products", "GET", null, `id=eq.${order.product_id}&select=name`
+    );
+    const productName = productData?.[0]?.name || "Eiree ရေသန့်စက်";
 
-    const prefs = ctx?.preferences ?? {};
+    // ပို့ပြီးသားဆိုရင် skip
+    const ctxData = await supabaseQuery(
+      "conversation_context", "GET", null, `customer_id=eq.${order.customer_id}&select=preferences`
+    );
+    const prefs = ctxData?.[0]?.preferences ?? {};
     if (prefs.one_month_check_sent_at) {
       console.log(`[Cron 1-month] Already sent for customer ${order.customer_id}, skipping.`);
       continue;
     }
 
     // AI Training ID 41 script — male character, သဘာဝကျကျ
-    // Gender မသေချာတဲ့အတွက် အကို/အမ မခေါ်ဘဲ ရိုးရိုး message သာ ပို့မယ်
     const message =
       `မင်္ဂလာပါခင်ဗျာ။\n\n` +
       `Eiree ရေသန့်စက်လေး တပ်ဆင်ပြီးတာ ၁ လပြည့်သွားပြီမို့ ` +
@@ -139,54 +146,35 @@ async function processOneMonthChecks(): Promise<void> {
 
     if (sent) {
       const sentAt = new Date().toISOString();
-
-      // conversation_context update — AI က ဒီ customer ကို 1 လပြည့် message ပို့ပြီးတာ သိမယ်
       await updateContextPreferences(order.customer_id, {
         purchased_product: productName,
         purchased_product_id: order.product_id,
         confirmed_at: order.confirmed_at,
         one_month_check_sent_at: sentAt,
       });
-
-      // conversations log — AI က Cron က ဘာပို့သွားတယ်ဆိုတာ context ထဲ မြင်နိုင်မယ်
       await logBotMessage(
         order.customer_id,
         `[Cron Auto-Message] ၁ လပြည့် satisfaction check နဲ့ referral program message ပို့ပြီး။ Product: ${productName}`
       );
-
       console.log(`[Cron 1-month] Sent to PSID: ${psid} — ${productName}`);
     }
   }
 }
 
-// ─── 6-Month Check ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// 6-MONTH CHECK — Filter Replacement Reminder
+// ═══════════════════════════════════════════════════════════════
 async function processSixMonthChecks(): Promise<void> {
   const now = new Date();
-  // 6 လပြည့်တဲ့ range — 180 days ±1 day tolerance
   const from = new Date(now);
   from.setDate(from.getDate() - 181);
   const to = new Date(now);
   to.setDate(to.getDate() - 179);
 
-  const { data: orders, error } = await supabase
-    .from("orders")
-    .select(`
-      id,
-      customer_id,
-      full_name,
-      product_id,
-      confirmed_at,
-      customers!inner(psid),
-      products!inner(name)
-    `)
-    .eq("status", "confirmed")
-    .gte("confirmed_at", from.toISOString())
-    .lte("confirmed_at", to.toISOString());
-
-  if (error) {
-    console.error("[Cron 6-month] Query error:", error);
-    return;
-  }
+  const orders = await supabaseQuery(
+    "orders", "GET", null,
+    `status=eq.confirmed&confirmed_at=gte.${from.toISOString()}&confirmed_at=lte.${to.toISOString()}&select=id,customer_id,product_id,confirmed_at`
+  );
 
   if (!orders || orders.length === 0) {
     console.log("[Cron 6-month] No customers to remind today.");
@@ -194,24 +182,28 @@ async function processSixMonthChecks(): Promise<void> {
   }
 
   for (const order of orders) {
-    const psid = (order.customers as { psid: string }).psid;
-    const productName = (order.products as { name: string }).name;
+    const customerData = await supabaseQuery(
+      "customers", "GET", null, `id=eq.${order.customer_id}&select=psid`
+    );
+    const psid = customerData?.[0]?.psid;
+    if (!psid) continue;
+
+    const productData = await supabaseQuery(
+      "products", "GET", null, `id=eq.${order.product_id}&select=name`
+    );
+    const productName = productData?.[0]?.name || "Eiree ရေသန့်စက်";
 
     // ပို့ပြီးသားဆိုရင် skip
-    const { data: ctx } = await supabase
-      .from("conversation_context")
-      .select("preferences")
-      .eq("customer_id", order.customer_id)
-      .single();
-
-    const prefs = ctx?.preferences ?? {};
+    const ctxData = await supabaseQuery(
+      "conversation_context", "GET", null, `customer_id=eq.${order.customer_id}&select=preferences`
+    );
+    const prefs = ctxData?.[0]?.preferences ?? {};
     if (prefs.filter_reminder_sent_at) {
       console.log(`[Cron 6-month] Already sent for customer ${order.customer_id}, skipping.`);
       continue;
     }
 
-    // Client ID 42 script အခြေခံ — male character, သဘာဝကျကျ
-    // Gender မသေချာတဲ့အတွက် အကို/အမ မခေါ်ဘဲ ရိုးရိုး message သာ ပို့မယ်
+    // Client ID 42 script — male character, သဘာဝကျကျ
     const message =
       `မင်္ဂလာပါခင်ဗျာ။\n\n` +
       `Eiree စက်လေး သုံးလာတာ ၆ လပြည့်တော့မှာဖြစ်လို့ ` +
@@ -223,32 +215,29 @@ async function processSixMonthChecks(): Promise<void> {
 
     if (sent) {
       const sentAt = new Date().toISOString();
-
-      // conversation_context update
       await updateContextPreferences(order.customer_id, {
         purchased_product: productName,
         purchased_product_id: order.product_id,
         confirmed_at: order.confirmed_at,
         filter_reminder_sent_at: sentAt,
       });
-
-      // conversations log
       await logBotMessage(
         order.customer_id,
         `[Cron Auto-Message] ၆ လပြည့် Carbon Filter လဲဖို့ reminder ပို့ပြီး။ Product: ${productName}`
       );
-
       console.log(`[Cron 6-month] Sent to PSID: ${psid} — ${productName}`);
     }
   }
 }
 
-// ─── Main Handler ─────────────────────────────────────────────────────────────
-export default async function handler(req: Request): Promise<Response> {
-  // Vercel Cron က CRON_SECRET နဲ့ verify လုပ်တယ် — unauthorized access ကာကွယ်ဖို့
-  const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response("Unauthorized", { status: 401 });
+// ═══════════════════════════════════════════════════════════════
+// MAIN HANDLER
+// ═══════════════════════════════════════════════════════════════
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Unauthorized access ကာကွယ်ဖို့
+  const authHeader = req.headers["authorization"];
+  if (authHeader !== `Bearer ${CRON_SECRET}`) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   console.log("[Cron] check-filters started at", new Date().toISOString());
@@ -258,15 +247,9 @@ export default async function handler(req: Request): Promise<Response> {
     await processSixMonthChecks();
 
     console.log("[Cron] check-filters completed successfully.");
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
+    return res.status(200).json({ success: true });
+  } catch (err: any) {
     console.error("[Cron] Unexpected error:", err);
-    return new Response(JSON.stringify({ success: false, error: String(err) }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return res.status(500).json({ success: false, error: String(err) });
   }
 }

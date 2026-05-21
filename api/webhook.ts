@@ -18,6 +18,18 @@ const AUTO_RESUME_MS = 30 * 60 * 1000;
 const MEDIA_ENABLED = true;
 
 // ═══════════════════════════════════════════════════════════════
+// MYANMAR NUMBER NORMALIZER
+// မြန်မာဂဏန်း → အင်္ဂလိပ်ဂဏန်း ပြောင်းမယ်
+// ═══════════════════════════════════════════════════════════════
+function normalizeMyanmarNumbers(text: string): string {
+  return text
+    .replace(/၀/g, "0").replace(/၁/g, "1").replace(/၂/g, "2")
+    .replace(/၃/g, "3").replace(/၄/g, "4").replace(/၅/g, "5")
+    .replace(/၆/g, "6").replace(/၇/g, "7").replace(/၈/g, "8")
+    .replace(/၉/g, "9");
+}
+
+// ═══════════════════════════════════════════════════════════════
 // TELEGRAM TEXT SANITIZER
 // ═══════════════════════════════════════════════════════════════
 function sanitizeTelegramText(text: string): string {
@@ -27,18 +39,26 @@ function sanitizeTelegramText(text: string): string {
 
 // ═══════════════════════════════════════════════════════════════
 // OUTPUT SANITIZER
+// Customer ဆီ ပို့တဲ့ reply ထဲမှာ code/json/symbols မပါအောင်
 // ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
   let cleaned = text
+    // မြန်မာဂဏန်း normalize
     .replace(/\\n/g, "\n")
     .replace(/\\t/g, " ")
+    // "reply": "..." ပုံစံ အားလုံး ဖယ်မယ်
+    .replace(/^["']?reply["']?\s*:\s*["']/im, "")
+    .replace(/["']\s*,?\s*["']?action["']?[\s\S]*/im, "")
+    // JSON block တွေ ဖယ်မယ်
     .replace(/^\s*\{[\s\S]*\}\s*$/gm, "")
     .replace(/\{[\s\S]*?"reply"[\s\S]*?\}/g, "")
     .replace(/```json[\s\S]*?```/gi, "")
     .replace(/```[\s\S]*?```/gi, "")
+    // JSON key တွေ ဖယ်မယ်
     .replace(/"(reply|action|product_id|product_ids|order_data|collected_data)":\s*(?:"[^"]*"|\{[^}]*\}|\[[^\]]*\]|null|true|false|\d+),?\s*/gi, "")
     .replace(/^\s*[{}[\]]\s*$/gm, "")
+    // Custom tags ဖယ်မယ်
     .replace(/NEED_FOLLOW_UP:\[.*?\]/gs, "")
     .replace(/NEED_FOLLOW_UP:[^\n]*/g, "")
     .replace(/PRICE_UNCERTAIN:[^\n]*/g, "")
@@ -57,18 +77,22 @@ function sanitizeReply(text: string): string {
     .replace(/ပုံလေးပါ\s*တစ်ပါတည်းကြည့်နိုင်ပါတယ်[^၊။\n]*/g, "")
     .replace(/တစ်ပါတည်းကြည့်နိုင်ပါတယ်ခင်ဗျာ\s*👇/g, "")
     .replace(/👇/g, "")
+    // Markdown ဖယ်မယ်
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/\*(.*?)\*/g, "$1")
     .replace(/^[\*\-]\s+/gm, "")
     .replace(/^\d+\.\s+/gm, "")
     .replace(/#{1,6}\s/g, "")
+    // Double quotes ဖယ်မယ်
+    .replace(/^["']|["']$/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return cleaned || "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
+  return cleaned || "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 }
 
 // ═══════════════════════════════════════════════════════════════
 // ORDER DATA EXTRACTOR
+// မြန်မာဂဏန်းပါ phone ဖမ်းနိုင်အောင် normalize လုပ်မယ်
 // ═══════════════════════════════════════════════════════════════
 function extractOrderDataFromMessage(messageText: string): {
   name: string | null;
@@ -76,12 +100,20 @@ function extractOrderDataFromMessage(messageText: string): {
   address: string | null;
 } {
   const result = { name: null as string | null, phone: null as string | null, address: null as string | null };
-  const phoneMatch = messageText.match(/09\d{7,9}/);
+
+  // မြန်မာဂဏန်း normalize ပြီးမှ phone ဖမ်းမယ်
+  const normalizedText = normalizeMyanmarNumbers(messageText).replace(/\s+/g, "");
+  const phoneMatch = normalizedText.match(/09\d{7,9}/);
   if (phoneMatch) result.phone = phoneMatch[0];
+
+  // Original text မှာ lines ခွဲမယ်
   const lines = messageText.split(/[\n،,]/).map(l => l.trim()).filter(l => l.length > 1);
-  const nonPhoneLines = lines.filter(l => !l.match(/09\d{7,9}/));
+
+  // Phone ပါတဲ့ line စစ်တဲ့အခါလည်း normalize လုပ်ပြီး စစ်မယ်
+  const nonPhoneLines = lines.filter(l => !normalizeMyanmarNumbers(l).replace(/\s+/g, "").match(/09\d{7,9}/));
   if (nonPhoneLines.length >= 1) result.name = nonPhoneLines[0];
   if (nonPhoneLines.length >= 2) result.address = nonPhoneLines[nonPhoneLines.length - 1];
+
   return result;
 }
 
@@ -282,7 +314,6 @@ async function restoreStock(productId: number, quantity: number) {
 
 // ═══════════════════════════════════════════════════════════════
 // ORDER SAVE HELPER
-// AI path နဲ့ Fallback path နှစ်ခုလုံးက ဒီ function ကို သုံးမယ်
 // ═══════════════════════════════════════════════════════════════
 async function processSaveOrder(
   customerId: number,
@@ -519,7 +550,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
   productToShow: any | null;
   productsToShow: any[];
 }> {
-  const fallback = "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
+  const fallback = "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 
   try {
     const customer = await getOrCreateCustomer(psid);
@@ -557,9 +588,12 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       content: h.message_text,
     }));
 
-    const addressRule = prefs.address
-      ? `ဖောက်သည်ကို "${prefs.address}" ဟုသာ ခေါ်ပါ။`
-      : `ဖောက်သည်ကို နာမ်စားဖြင့် မခေါ်ပါနဲ့။ ယဉ်ကျေးစွာ ဆက်သွယ်ပါ။`;
+    // ── Gender-aware address rule ──
+    // prefs.address မှာ "အကို" / "အမ" သိမ်းထားပြီးဆိုရင် သုံးမယ်
+    const genderTitle = prefs.address === "အကို" || prefs.address === "အမ" ? prefs.address : "";
+    const addressRule = genderTitle
+      ? `Customer ကို "${genderTitle}" ဟု ယဉ်ကျေးစွာ ခေါ်ပါ။`
+      : `Customer ရဲ့ နာမည်ရပြီဆိုရင် gender စစ်ပြီး "အကို [နာမည်]" သို့မဟုတ် "အမ [နာမည်]" ဆိုပြီး ခေါ်ပါ။ မသေချာရင် နာမည်မပါဘဲ ယဉ်ကျေးစွာ ဆက်သွယ်ပါ။`;
 
     const orderContext = prefs.collecting_order
       ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။`
@@ -575,19 +609,22 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
-━━━ စကားပြောပုံစံ ━━━
-• ${addressRule} "ရှင့်" မသုံးနဲ့။
-• မိမိကို "ခင်ဗျာ" သုံးပါ။
-• သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
+━━━ စကားပြောပုံစံ (အရေးအကြီးဆုံး) ━━━
+• ${addressRule}
+• "ရှင့်" "ခင်ဗျာရဲ့" "ခင်ဗျားရဲ့" စသည့် ရိုင်းသော နာမ်စားများ လုံးဝမသုံးရ။
+• မိမိကိုယ်ကို "ကျွန်တော်" ဟုသာ ရည်ညွှန်းပါ။
+• Customer နာမည်ကို "အကို [နာမည်]" / "အမ [နာမည်]" ဆိုပြီးသာ ခေါ်ပါ၊ နာမည်တိုက်ရိုက် မခေါ်ရ။
+• သဘာဝကျကျ၊ နွေးထွေးစွာ၊ ပရော်ဖက်ရှင်နယ်ဆန်ဆန် ပြောပါ။
+• Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
 • Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
 • \\n escape sequence တွေ reply ထဲ မထည့်ရ။
 • Product ID တွေ ([ID:x]) ကို reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
 
 ━━━ Response Format ━━━
-အမြဲ JSON format နဲ့ respond ရမည်။
+အမြဲ JSON format နဲ့ respond ရမည်။ JSON key/value တွေ reply text ထဲ မပါရ။
 
 {
-  "reply": "Customer ဆီပို့မယ့် plain Myanmar text",
+  "reply": "Customer ဆီပို့မယ့် plain Myanmar text သာ",
   "action": "none" | "show_product" | "show_products" | "start_order" | "save_order" | "notify_owner",
   "product_id": null | number,
   "product_ids": null | [number, number, ...],
@@ -597,14 +634,15 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
-• "show_product" — Customer က product တစ်ခုတည်း ကြည့်ချင်တဲ့အခါ (product_id ထည့်ပေးပါ)
-• "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်တဲ့အခါ (product_ids array)
-• "start_order" — Customer က ဝယ်မယ်ဆိုပြီး info မပေးသေးတဲ့အခါ
+• "show_product" — product တစ်ခုတည်း ကြည့်ချင်တဲ့အခါ
+• "show_products" — product အများကြီး ကြည့်ချင်တဲ့အခါ
+• "start_order" — ဝယ်မယ်ဆိုပြီး info မပေးသေးတဲ့အခါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
-• "save_order" — Customer က name + phone + address ၃ ခုစလုံး ပေးပြီးဆိုရင် ချက်ချင်း သုံးပါ
+• "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
   ⚠️ collected_data ထဲမှာ name, phone, address အပြည့်အစုံ ထည့်ပေးပါ
-• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း
+  ⚠️ phone number မှာ မြန်မာဂဏန်း (၀၉...) ပါလာရင် အင်္ဂလိပ်ဂဏန်း (09...) အဖြစ် ပြောင်းပြီး သိမ်းပါ
+• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း
 
 ━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
@@ -615,7 +653,7 @@ ${orderContext}${activeOrderWarning}
 ⚠️ Stock အကြောင်း လုံးဝမပြောရ။
 ⚠️ ပုံပို့မည်ဆိုသော hint ကို reply ထဲ မထည့်ရ။
 
-━━━ Products (ID တွေသည် internal reference သာ) ━━━
+━━━ Products ━━━
 ${productListForAI}`;
 
     const response = await axios.post(
@@ -706,14 +744,17 @@ ${productListForAI}`;
 
     // ════════════════════════════════════════════════════════════
     // SAVE ORDER — HYBRID APPROACH
-    // Path 1 (AI): AI က save_order action + collected_data ထုတ်ရင်
-    // Path 2 (Code Fallback): collecting_order=true + phone ပါနေရင်
+    // Path 1 (AI): AI က save_order + collected_data ထုတ်ရင်
+    // Path 2 (Fallback): collecting_order=true + phone ပါနေရင်
     // ════════════════════════════════════════════════════════════
 
-    // ── PATH 1: AI save_order action ──
+    // ── PATH 1: AI save_order ──
     if (action === "save_order" && aiResponse.collected_data && !prefs.has_active_order) {
       const { name, phone, address, quantity } = aiResponse.collected_data;
-      if (name && phone && address) {
+      // AI က collected_data ထဲ phone ကို normalize လုပ်ပြီး ပေးရမယ်လို့ မှာထားပြီ
+      // ဒါပေမယ့် safety အတွက် ဒီမှာလည်း normalize ထပ်လုပ်မယ်
+      const normalizedPhone = phone ? normalizeMyanmarNumbers(phone).replace(/\s+/g, "") : phone;
+      if (name && normalizedPhone && address) {
         const product =
           (prefs.pending_product_id ? products.find((p: any) => p.id === prefs.pending_product_id) : null) ||
           (prefs.pending_product ? products.find((p: any) =>
@@ -726,14 +767,14 @@ ${productListForAI}`;
 
         if (product) {
           console.log(`[AI PATH] Saving order for customer ${customer.id}`);
-          await processSaveOrder(customer.id, psid, name, phone, address, quantity || 1, product, prefs);
+          await processSaveOrder(customer.id, psid, name, normalizedPhone, address, quantity || 1, product, prefs);
         } else {
           await notifyOwnerTelegram(
-            `⚠️ Order product မရှင်းသေး\nCustomer: ${sanitizeTelegramText(name)}\nPhone: ${sanitizeTelegramText(phone)}\n🔑 ID: ${psid}`
+            `⚠️ Order product မရှင်းသေး\nCustomer: ${sanitizeTelegramText(name)}\nPhone: ${sanitizeTelegramText(normalizedPhone)}\n🔑 ID: ${psid}`
           );
           await notifyOwnerDashboard(customer.id, "human_support_needed",
             "⚠️ Product မရှင်းသေး Order",
-            `${name} | ${phone} | ${address}`
+            `${name} | ${normalizedPhone} | ${address}`
           );
         }
       }
@@ -744,7 +785,7 @@ ${productListForAI}`;
       action !== "save_order" &&
       !prefs.has_active_order &&
       prefs.collecting_order &&
-      /09\d{7,9}/.test(messageText)
+      normalizeMyanmarNumbers(messageText).replace(/\s+/g, "").match(/09\d{7,9}/)
     ) {
       const extracted = extractOrderDataFromMessage(messageText);
       const { name, phone, address } = extracted;
@@ -809,10 +850,6 @@ ${productListForAI}`;
 
 // ═══════════════════════════════════════════════════════════════
 // ORDER CONFIRM
-// ── ပြောင်းလဲချက် ──
-// 1. confirmed_at သိမ်းမယ် (orders table + conversation_context)
-// 2. purchased_product data သိမ်းမယ် (Cron Job အတွက်)
-// 3. has_active_order logic မပြောင်း
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
@@ -820,7 +857,6 @@ async function handleOrderConfirm(body: any): Promise<void> {
   try {
     const confirmedAt = new Date().toISOString();
 
-    // orders table မှာ status + confirmed_at တစ်ခါတည်း update
     await supabaseQuery("orders", "PATCH",
       { status: "confirmed", confirmed_at: confirmedAt },
       `id=eq.${order_id}`
@@ -834,7 +870,6 @@ async function handleOrderConfirm(body: any): Promise<void> {
         const context = await getContext(customer.id);
         const prefs = parsePreferences(context?.preferences);
 
-        // Cron Job အတွက် product name ဆွဲထုတ်မယ်
         let purchasedProductName: string | null = null;
         if (product_id) {
           const productData = await supabaseQuery(
@@ -843,8 +878,6 @@ async function handleOrderConfirm(body: any): Promise<void> {
           purchasedProductName = productData?.[0]?.name || null;
         }
 
-        // preferences ထဲ purchase data ထပ်ပေါင်းထည့်မယ်
-        // has_active_order နဲ့ order logic တွေ မပြောင်းဘဲ ထပ်ပေါင်းထည့်တာသာ
         await updateContext(customer.id, {
           preferences: {
             ...prefs,
@@ -864,7 +897,6 @@ async function handleOrderConfirm(body: any): Promise<void> {
 
 // ═══════════════════════════════════════════════════════════════
 // ORDER CANCEL
-// Cancel ဆိုရင် purchase data မသိမ်းဘဲ has_active_order: false ပဲ ပြန်ထားမယ်
 // ═══════════════════════════════════════════════════════════════
 async function handleOrderCancel(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity, was_confirmed } = body;
@@ -872,7 +904,6 @@ async function handleOrderCancel(body: any): Promise<void> {
   try {
     await supabaseQuery("orders", "PATCH", { status: "cancelled" }, `id=eq.${order_id}`);
 
-    // was_confirmed ဆိုရင်သာ stock ပြန်ထည့်
     if (was_confirmed && product_id && quantity) await restoreStock(product_id, quantity);
 
     if (customer_psid) {
@@ -880,8 +911,6 @@ async function handleOrderCancel(body: any): Promise<void> {
       if (customer?.id) {
         const context = await getContext(customer.id);
         const prefs = parsePreferences(context?.preferences);
-
-        // confirmed_at / purchased_product တွေ မထိဘဲ has_active_order: false ပဲ ပြန်ထားမယ်
         await updateContext(customer.id, {
           preferences: {
             ...prefs,
@@ -980,7 +1009,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                 } else if (event.message) {
                   const msgType = Object.keys(event.message).filter(k => k !== "mid" && k !== "seq").join(", ");
-                  await sendMessage(senderId, "ကျွန်တော်တို့ team ကနေ မကြာမီ ပြန်ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏");
+                  await sendMessage(senderId, "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏");
                   await notifyOwnerDashboard(customer.id, "non_text_message", "📎 Text မဟုတ်တဲ့ Message", `Customer ပို့တာ: ${msgType}`);
                   await notifyOwnerTelegram(`📎 Text မဟုတ်တဲ့ Message\nအမျိုးအစား: ${msgType}\n🔑 ID: ${senderId}\n👉 Dashboard မှာ ကြည့်ပြီး ပြန်ဆက်သွယ်ပေးပါ`);
                 }

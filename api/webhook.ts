@@ -1,9 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import axios from "axios";
 
-// ═══════════════════════════════════════════════════════════════
-// ENVIRONMENT VARIABLES
-// ═══════════════════════════════════════════════════════════════
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const FACEBOOK_PAGE_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 const FACEBOOK_WEBHOOK_VERIFY_TOKEN = process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN;
@@ -17,10 +14,6 @@ const OWNER_TELEGRAM_CHAT_ID = process.env.OWNER_TELEGRAM_CHAT_ID;
 const AUTO_RESUME_MS = 30 * 60 * 1000;
 const MEDIA_ENABLED = true;
 
-// ═══════════════════════════════════════════════════════════════
-// MYANMAR NUMBER NORMALIZER
-// မြန်မာဂဏန်း → အင်္ဂလိပ်ဂဏန်း
-// ═══════════════════════════════════════════════════════════════
 function normalizeMyanmarNumbers(text: string): string {
   return text
     .replace(/၀/g, "0").replace(/၁/g, "1").replace(/၂/g, "2")
@@ -29,25 +22,13 @@ function normalizeMyanmarNumbers(text: string): string {
     .replace(/၉/g, "9");
 }
 
-// ═══════════════════════════════════════════════════════════════
-// GENDER DETECT FROM SPEECH PATTERN
-// စကားပြောပုံစံကြည့်ပြီး gender ခန့်မှန်းမယ်
-// "ရှင့်" သုံးရင် → female
-// "ဗျ" / "ကွ" / "ဗျာ" → male
-// မသေချာရင် → ""
-// ═══════════════════════════════════════════════════════════════
 function detectGenderFromSpeechPattern(text: string): string {
   if (!text) return "";
-  // Female indicators
   if (/ရှင့်|ရှင်|နော်\s*$|ကွယ်/.test(text)) return "female";
-  // Male indicators
   if (/ဗျ\s*$|ဗျာ\s*$|ကွ\s*$|ကွာ\s*$|ဟဲ\s*$/.test(text)) return "male";
   return "";
 }
 
-// ═══════════════════════════════════════════════════════════════
-// GENDER DETECT FROM NAME (AI)
-// ═══════════════════════════════════════════════════════════════
 async function detectGenderFromName(name: string): Promise<string> {
   if (!name || name.length < 2) return "";
   try {
@@ -55,10 +36,7 @@ async function detectGenderFromName(name: string): Promise<string> {
       "https://openrouter.ai/api/v1/chat/completions",
       {
         model: "google/gemini-2.5-flash",
-        messages: [{
-          role: "user",
-          content: `နာမည် "${name}" က ယောကျ်ားလေးလား မိန်းကလေးလား? JSON format နဲ့သာ:\n{"gender":"male"} or {"gender":"female"} or {"gender":"unknown"}`,
-        }],
+        messages: [{ role: "user", content: `နာမည် "${name}" က ယောကျ်ားလေးလား မိန်းကလေးလား? JSON format နဲ့သာ:\n{"gender":"male"} or {"gender":"female"} or {"gender":"unknown"}` }],
         max_tokens: 20,
         temperature: 0.1,
       },
@@ -72,17 +50,11 @@ async function detectGenderFromName(name: string): Promise<string> {
   } catch { return ""; }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// TELEGRAM TEXT SANITIZER
-// ═══════════════════════════════════════════════════════════════
 function sanitizeTelegramText(text: string): string {
   if (!text) return "";
   return text.replace(/[*_`[\]]/g, "");
 }
 
-// ═══════════════════════════════════════════════════════════════
-// OUTPUT SANITIZER
-// ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
   let cleaned = text
@@ -122,9 +94,6 @@ function sanitizeReply(text: string): string {
   return cleaned || "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ORDER DATA EXTRACTOR
-// ═══════════════════════════════════════════════════════════════
 function extractOrderDataFromMessage(messageText: string): {
   name: string | null;
   phone: string | null;
@@ -141,9 +110,6 @@ function extractOrderDataFromMessage(messageText: string): {
   return result;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SUPABASE HELPER
-// ═══════════════════════════════════════════════════════════════
 async function supabaseQuery(table: string, method: string, body?: any, query?: string) {
   const url = `${SUPABASE_URL}/rest/v1/${table}${query ? `?${query}` : ""}`;
   const headers: any = {
@@ -164,9 +130,6 @@ async function supabaseQuery(table: string, method: string, body?: any, query?: 
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// NOTIFICATIONS
-// ═══════════════════════════════════════════════════════════════
 async function notifySystemError(msg: string) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
   try {
@@ -200,9 +163,6 @@ async function notifyOwnerDashboard(customerId: number, type: string, title: str
   } catch (e: any) { console.error("Dashboard notify error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// DEDUPLICATION
-// ═══════════════════════════════════════════════════════════════
 async function isMessageProcessed(messageId: string): Promise<boolean> {
   try {
     const result = await supabaseQuery("processed_messages", "GET", null, `message_id=eq.${messageId}&select=message_id`);
@@ -216,9 +176,6 @@ async function markMessageProcessed(messageId: string) {
   } catch (e: any) { console.error("Mark processed error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CUSTOMER
-// ═══════════════════════════════════════════════════════════════
 async function getOrCreateCustomer(psid: string) {
   try {
     const existing = await supabaseQuery("customers", "GET", null, `psid=eq.${psid}&select=*`);
@@ -231,9 +188,6 @@ async function getOrCreateCustomer(psid: string) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// BOT PAUSE CHECK WITH AUTO-RESUME
-// ═══════════════════════════════════════════════════════════════
 async function isBotPausedForCustomer(customer: any): Promise<boolean> {
   if (!customer?.bot_paused) return false;
   if (!customer?.paused_at) return true;
@@ -245,9 +199,6 @@ async function isBotPausedForCustomer(customer: any): Promise<boolean> {
   return true;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MESSAGE ECHO HANDLER
-// ═══════════════════════════════════════════════════════════════
 async function handleMessageEcho(event: any): Promise<void> {
   try {
     if (!event.message?.is_echo) return;
@@ -269,9 +220,6 @@ async function handleMessageEcho(event: any): Promise<void> {
   } catch (e: any) { console.error("handleMessageEcho error:", e.message); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CONVERSATION
-// ═══════════════════════════════════════════════════════════════
 async function getConversationHistory(customerId: number, limit = 20) {
   if (!customerId) return [];
   try {
@@ -280,30 +228,24 @@ async function getConversationHistory(customerId: number, limit = 20) {
   } catch { return []; }
 }
 
-async function saveConversation(customerId: number, messageType: string, messageText: string) {
+async function saveConversation(customerId: number, messageType: string, messageText: string, metadata?: any) {
   if (!customerId) return;
   try {
     await supabaseQuery("conversations", "POST", {
       customer_id: customerId,
       message_type: messageType,
       message_text: messageText,
-      metadata: {},
+      metadata: metadata || {},
     });
   } catch (e: any) { console.error("saveConversation error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PRODUCTS
-// ═══════════════════════════════════════════════════════════════
 async function getProducts() {
   try {
     return (await supabaseQuery("products", "GET", null, "is_active=eq.true&select=*")) || [];
   } catch { return []; }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PRODUCT FINDER FROM HISTORY
-// ═══════════════════════════════════════════════════════════════
 function findProductFromHistory(history: any[], products: any[]): any {
   const botMessages = history
     .filter((h: any) => h.message_type === "bot")
@@ -315,9 +257,6 @@ function findProductFromHistory(history: any[], products: any[]): any {
   return null;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// STOCK MANAGEMENT
-// ═══════════════════════════════════════════════════════════════
 async function deductStock(productId: number, quantity: number) {
   try {
     const product = await supabaseQuery("products", "GET", null, `id=eq.${productId}&select=stock_quantity,name`);
@@ -336,9 +275,6 @@ async function restoreStock(productId: number, quantity: number) {
   } catch (e: any) { console.error("restoreStock error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ORDER SAVE HELPER
-// ═══════════════════════════════════════════════════════════════
 async function processSaveOrder(
   customerId: number,
   psid: string,
@@ -351,10 +287,7 @@ async function processSaveOrder(
 ) {
   const isPreorder = product.stock_quantity <= 0;
   const totalPrice = Number(product.price_mmk) * (quantity || 1);
-
-  // Gender detect from name (AI)
   const genderFromName = await detectGenderFromName(name);
-  // Combine: name-based gender > existing speech-pattern gender
   const existingGender = prefs.detected_gender || "";
   const finalGender = genderFromName || existingGender;
   const genderTitle = finalGender === "male" ? "အကို" : finalGender === "female" ? "အမ" : "";
@@ -386,7 +319,6 @@ async function processSaveOrder(
       `🔑 Customer ID: ${psid}\n\n` +
       `👉 Dashboard မှာ confirm လုပ်ပေးပါ`
     );
-    // Context update — gender သပ်သပ် သိမ်းမယ်၊ address နဲ့ မရောတော့ဘူး
     await updateContext(customerId, {
       preferences: {
         address: "",
@@ -405,9 +337,6 @@ async function processSaveOrder(
   return false;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ORDER DB
-// ═══════════════════════════════════════════════════════════════
 async function saveOrderToDb(orderData: any) {
   try {
     return await supabaseQuery("orders", "POST", orderData);
@@ -417,9 +346,6 @@ async function saveOrderToDb(orderData: any) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CONTEXT
-// ═══════════════════════════════════════════════════════════════
 async function getContext(customerId: number) {
   if (!customerId) return null;
   try {
@@ -476,9 +402,6 @@ function parsePreferences(preferences: any) {
   } catch { return defaults; }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// AI TRAINING CONFIG
-// ═══════════════════════════════════════════════════════════════
 async function getActiveTrainingInstructions(): Promise<string> {
   try {
     const configs = await supabaseQuery("ai_training_config", "GET", null,
@@ -495,9 +418,6 @@ async function getActiveTrainingInstructions(): Promise<string> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND
-// ═══════════════════════════════════════════════════════════════
 async function sendMessage(recipientId: string, text: string) {
   try {
     await axios.post(
@@ -553,9 +473,6 @@ async function sendMultipleProductImages(recipientId: string, productList: any[]
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MAIN AI RESPONSE
-// ═══════════════════════════════════════════════════════════════
 async function generateAIResponse(psid: string, messageText: string): Promise<{
   reply: string;
   productToShow: any | null;
@@ -576,36 +493,21 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
     const prefs = parsePreferences(context?.preferences);
 
-    // ── Speech pattern gender detect ──
-    // Customer message ကနေ gender hint ရှာမယ်
-    // Context ထဲ detected_gender မရှိသေးရင်သာ detect လုပ်မယ်
     if (!prefs.detected_gender) {
       const speechGender = detectGenderFromSpeechPattern(messageText);
       if (speechGender) {
         const genderTitle = speechGender === "male" ? "အကို" : "အမ";
         await updateContext(customer.id, {
-          preferences: {
-            ...prefs,
-            detected_gender: speechGender,
-            gender_title: genderTitle,
-          },
+          preferences: { ...prefs, detected_gender: speechGender, gender_title: genderTitle },
         });
         prefs.detected_gender = speechGender;
         prefs.gender_title = genderTitle;
       }
     }
 
-    // ── First-time greeting ──
     if (!context?.preferences && history.length === 0) {
       await updateContext(customer.id, {
-        preferences: {
-          address: "",
-          collecting_order: false,
-          has_active_order: false,
-          detected_gender: "",
-          customer_name: "",
-          gender_title: "",
-        },
+        preferences: { address: "", collecting_order: false, has_active_order: false, detected_gender: "", customer_name: "", gender_title: "" },
       });
       const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
       await saveConversation(customer.id, "customer", messageText);
@@ -625,10 +527,6 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       content: h.message_text,
     }));
 
-    // ── Address rule based on detected gender ──
-    // gender_title သိပြီဆိုရင် → အဲဒါသုံးမယ်
-    // customer_name ရှိပြီဆိုရင် → "gender_title နာမည်" ဟု ခေါ်မယ်
-    // မသိသေးရင် → neutral ဆက်သွယ်မယ်
     let addressRule = "";
     if (prefs.gender_title && prefs.customer_name) {
       addressRule = `Customer ကို "${prefs.gender_title} ${prefs.customer_name}" ဟုသာ ခေါ်ပါ။`;
@@ -749,13 +647,11 @@ ${productListForAI}`;
     const safeReply = sanitizeReply(aiResponse.reply || fallback);
     const action = aiResponse.action || "none";
 
-    // ── SHOW SINGLE PRODUCT ──
     let productToShow: any = null;
     if (action === "show_product" && aiResponse.product_id) {
       productToShow = products.find((p: any) => p.id === aiResponse.product_id) || null;
     }
 
-    // ── SHOW MULTIPLE PRODUCTS ──
     let productsToShow: any[] = [];
     if (action === "show_products" && aiResponse.product_ids?.length > 0) {
       productsToShow = aiResponse.product_ids
@@ -763,7 +659,6 @@ ${productListForAI}`;
         .filter(Boolean);
     }
 
-    // ── START ORDER ──
     if (action === "start_order" && aiResponse.order_data) {
       const product =
         products.find((p: any) => p.id === aiResponse.order_data.product_id) ||
@@ -783,13 +678,6 @@ ${productListForAI}`;
       });
     }
 
-    // ════════════════════════════════════════════════════
-    // SAVE ORDER — HYBRID APPROACH
-    // Path 1 (AI): AI က save_order + collected_data ထုတ်ရင်
-    // Path 2 (Fallback): collecting_order=true + phone ပါနေရင်
-    // ════════════════════════════════════════════════════
-
-    // ── PATH 1: AI save_order ──
     if (action === "save_order" && aiResponse.collected_data && !prefs.has_active_order) {
       const { name, phone, address, quantity } = aiResponse.collected_data;
       const normalizedPhone = phone ? normalizeMyanmarNumbers(phone).replace(/\s+/g, "") : phone;
@@ -817,10 +705,7 @@ ${productListForAI}`;
           );
         }
       }
-    }
-
-    // ── PATH 2: CODE FALLBACK ──
-    else if (
+    } else if (
       action !== "save_order" &&
       !prefs.has_active_order &&
       prefs.collecting_order &&
@@ -828,7 +713,6 @@ ${productListForAI}`;
     ) {
       const extracted = extractOrderDataFromMessage(messageText);
       const { name, phone, address } = extracted;
-
       if (name && phone && address) {
         const product =
           (prefs.pending_product_id ? products.find((p: any) => p.id === prefs.pending_product_id) : null) ||
@@ -838,7 +722,6 @@ ${productListForAI}`;
           ) : null) ||
           findProductFromHistory(history, products) ||
           null;
-
         if (product) {
           console.log(`[FALLBACK PATH] Saving order for customer ${customer.id}`);
           await processSaveOrder(customer.id, psid, name, phone, address, 1, product, prefs);
@@ -846,7 +729,6 @@ ${productListForAI}`;
       }
     }
 
-    // ── NOTIFY OWNER ──
     if (action === "notify_owner") {
       await notifyOwnerDashboard(customer.id, "human_support_needed",
         "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`
@@ -856,7 +738,6 @@ ${productListForAI}`;
       );
     }
 
-    // ── CODE-LEVEL START ORDER SAFETY NET ──
     if (action === "none" && !prefs.collecting_order && !prefs.has_active_order) {
       const askingForInfo = safeReply.includes("နာမည်") &&
         (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));
@@ -887,9 +768,6 @@ ${productListForAI}`;
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ORDER CONFIRM — confirmed_at သိမ်းမယ်
-// ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
   if (!order_id) return;
@@ -927,9 +805,6 @@ async function handleOrderConfirm(body: any): Promise<void> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ORDER CANCEL
-// ═══════════════════════════════════════════════════════════════
 async function handleOrderCancel(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity, was_confirmed } = body;
   if (!order_id) return;
@@ -952,9 +827,6 @@ async function handleOrderCancel(body: any): Promise<void> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MAIN WEBHOOK HANDLER
-// ═══════════════════════════════════════════════════════════════
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -1024,14 +896,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                   await sendMessage(senderId, reply);
 
+                  // ── SHOW SINGLE PRODUCT — ပုံပို့ပြီး Dashboard အတွက် image URL သွင်းမယ် ──
                   if (productToShow) {
                     await new Promise(resolve => setTimeout(resolve, 300));
                     await sendProductImages(senderId, productToShow);
+                    // Dashboard conversations ထဲ image URL သွင်းမယ်
+                    if (productToShow.image_url) {
+                      await saveConversation(customer.id, "bot", productToShow.image_url, { image_url: productToShow.image_url });
+                    }
+                    if (productToShow.image_url2) {
+                      await saveConversation(customer.id, "bot", productToShow.image_url2, { image_url: productToShow.image_url2 });
+                    }
                   }
 
+                  // ── SHOW MULTIPLE PRODUCTS — ပုံပို့ပြီး Dashboard အတွက် image URL သွင်းမယ် ──
                   if (productsToShow.length > 0) {
                     await new Promise(resolve => setTimeout(resolve, 300));
                     await sendMultipleProductImages(senderId, productsToShow);
+                    // Dashboard conversations ထဲ image URL တွေ သွင်းမယ်
+                    for (const p of productsToShow) {
+                      if (p.image_url) {
+                        await saveConversation(customer.id, "bot", p.image_url, { image_url: p.image_url });
+                      }
+                      if (p.image_url2) {
+                        await saveConversation(customer.id, "bot", p.image_url2, { image_url: p.image_url2 });
+                      }
+                    }
                   }
 
                 } else if (event.message) {

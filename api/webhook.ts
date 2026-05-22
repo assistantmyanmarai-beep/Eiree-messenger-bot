@@ -14,6 +14,9 @@ const OWNER_TELEGRAM_CHAT_ID = process.env.OWNER_TELEGRAM_CHAT_ID;
 const AUTO_RESUME_MS = 30 * 60 * 1000;
 const MEDIA_ENABLED = true;
 
+// ═══════════════════════════════════════════════════════════════
+// MYANMAR NUMBER NORMALIZER
+// ═══════════════════════════════════════════════════════════════
 function normalizeMyanmarNumbers(text: string): string {
   return text
     .replace(/၀/g, "0").replace(/၁/g, "1").replace(/၂/g, "2")
@@ -22,6 +25,24 @@ function normalizeMyanmarNumbers(text: string): string {
     .replace(/၉/g, "9");
 }
 
+// ═══════════════════════════════════════════════════════════════
+// CODE-LEVEL IMAGE REQUEST DETECTOR
+// Customer message ထဲမှာ ပုံတောင်းတဲ့ keywords ရှာမယ်
+// AI action မမှီဘဲ တိုက်ရိုက် ပုံပို့မယ်
+// ═══════════════════════════════════════════════════════════════
+function detectImageRequest(text: string): boolean {
+  const imageKeywords = [
+    "ပုံ", "photo", "ဓာတ်ပုံ", "ပြပေး", "ကြည့်ချင်",
+    "မြင်ချင်", "show", "image", "pic", "ပုံလေး",
+    "ပုံပြ", "ကြည့်ပါ", "ပြပါ"
+  ];
+  const lowerText = text.toLowerCase();
+  return imageKeywords.some(k => lowerText.includes(k));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GENDER DETECT FROM SPEECH PATTERN
+// ═══════════════════════════════════════════════════════════════
 function detectGenderFromSpeechPattern(text: string): string {
   if (!text) return "";
   if (/ရှင့်|ရှင်|နော်\s*$|ကွယ်/.test(text)) return "female";
@@ -29,6 +50,9 @@ function detectGenderFromSpeechPattern(text: string): string {
   return "";
 }
 
+// ═══════════════════════════════════════════════════════════════
+// GENDER DETECT FROM NAME (AI)
+// ═══════════════════════════════════════════════════════════════
 async function detectGenderFromName(name: string): Promise<string> {
   if (!name || name.length < 2) return "";
   try {
@@ -50,11 +74,17 @@ async function detectGenderFromName(name: string): Promise<string> {
   } catch { return ""; }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// TELEGRAM SANITIZER
+// ═══════════════════════════════════════════════════════════════
 function sanitizeTelegramText(text: string): string {
   if (!text) return "";
   return text.replace(/[*_`[\]]/g, "");
 }
 
+// ═══════════════════════════════════════════════════════════════
+// OUTPUT SANITIZER
+// ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
   let cleaned = text
@@ -94,10 +124,11 @@ function sanitizeReply(text: string): string {
   return cleaned || "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ORDER DATA EXTRACTOR
+// ═══════════════════════════════════════════════════════════════
 function extractOrderDataFromMessage(messageText: string): {
-  name: string | null;
-  phone: string | null;
-  address: string | null;
+  name: string | null; phone: string | null; address: string | null;
 } {
   const result = { name: null as string | null, phone: null as string | null, address: null as string | null };
   const normalizedText = normalizeMyanmarNumbers(messageText).replace(/\s+/g, "");
@@ -110,6 +141,9 @@ function extractOrderDataFromMessage(messageText: string): {
   return result;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// SUPABASE HELPER
+// ═══════════════════════════════════════════════════════════════
 async function supabaseQuery(table: string, method: string, body?: any, query?: string) {
   const url = `${SUPABASE_URL}/rest/v1/${table}${query ? `?${query}` : ""}`;
   const headers: any = {
@@ -130,12 +164,14 @@ async function supabaseQuery(table: string, method: string, body?: any, query?: 
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════
 async function notifySystemError(msg: string) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
   try {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `System Error\n\n${msg}`,
+      chat_id: TELEGRAM_CHAT_ID, text: `System Error\n\n${msg}`,
     });
   } catch (e: any) { console.error("System Telegram error:", e.message); }
 }
@@ -144,8 +180,7 @@ async function notifyOwnerTelegram(msg: string) {
   if (!OWNER_TELEGRAM_BOT_TOKEN || !OWNER_TELEGRAM_CHAT_ID) return;
   try {
     await axios.post(`https://api.telegram.org/bot${OWNER_TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: OWNER_TELEGRAM_CHAT_ID,
-      text: msg,
+      chat_id: OWNER_TELEGRAM_CHAT_ID, text: msg,
     });
   } catch (e: any) { console.error("Owner Telegram error:", e.message); }
 }
@@ -154,15 +189,15 @@ async function notifyOwnerDashboard(customerId: number, type: string, title: str
   if (!customerId) return;
   try {
     await supabaseQuery("owner_notifications", "POST", {
-      notification_type: type,
-      customer_id: customerId,
-      order_id: orderId,
-      title,
-      content,
+      notification_type: type, customer_id: customerId,
+      order_id: orderId, title, content,
     });
   } catch (e: any) { console.error("Dashboard notify error:", e); }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// DEDUPLICATION
+// ═══════════════════════════════════════════════════════════════
 async function isMessageProcessed(messageId: string): Promise<boolean> {
   try {
     const result = await supabaseQuery("processed_messages", "GET", null, `message_id=eq.${messageId}&select=message_id`);
@@ -176,6 +211,9 @@ async function markMessageProcessed(messageId: string) {
   } catch (e: any) { console.error("Mark processed error:", e); }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// CUSTOMER
+// ═══════════════════════════════════════════════════════════════
 async function getOrCreateCustomer(psid: string) {
   try {
     const existing = await supabaseQuery("customers", "GET", null, `psid=eq.${psid}&select=*`);
@@ -188,6 +226,9 @@ async function getOrCreateCustomer(psid: string) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// BOT PAUSE CHECK WITH AUTO-RESUME
+// ═══════════════════════════════════════════════════════════════
 async function isBotPausedForCustomer(customer: any): Promise<boolean> {
   if (!customer?.bot_paused) return false;
   if (!customer?.paused_at) return true;
@@ -199,6 +240,9 @@ async function isBotPausedForCustomer(customer: any): Promise<boolean> {
   return true;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MESSAGE ECHO HANDLER
+// ═══════════════════════════════════════════════════════════════
 async function handleMessageEcho(event: any): Promise<void> {
   try {
     if (!event.message?.is_echo) return;
@@ -208,10 +252,8 @@ async function handleMessageEcho(event: any): Promise<void> {
     if (!customer?.id) return;
     const adminMessageText = event.message?.text || "[Media or attachment]";
     await supabaseQuery("conversations", "POST", {
-      customer_id: customer.id,
-      message_type: "admin",
-      message_text: adminMessageText,
-      metadata: { source: "messenger_echo" },
+      customer_id: customer.id, message_type: "admin",
+      message_text: adminMessageText, metadata: { source: "messenger_echo" },
     });
     await supabaseQuery("customers", "PATCH",
       { bot_paused: true, paused_at: new Date().toISOString() },
@@ -220,6 +262,9 @@ async function handleMessageEcho(event: any): Promise<void> {
   } catch (e: any) { console.error("handleMessageEcho error:", e.message); }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// CONVERSATION
+// ═══════════════════════════════════════════════════════════════
 async function getConversationHistory(customerId: number, limit = 20) {
   if (!customerId) return [];
   try {
@@ -232,14 +277,15 @@ async function saveConversation(customerId: number, messageType: string, message
   if (!customerId) return;
   try {
     await supabaseQuery("conversations", "POST", {
-      customer_id: customerId,
-      message_type: messageType,
-      message_text: messageText,
-      metadata: metadata || {},
+      customer_id: customerId, message_type: messageType,
+      message_text: messageText, metadata: metadata || {},
     });
   } catch (e: any) { console.error("saveConversation error:", e); }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// PRODUCTS
+// ═══════════════════════════════════════════════════════════════
 async function getProducts() {
   try {
     return (await supabaseQuery("products", "GET", null, "is_active=eq.true&select=*")) || [];
@@ -257,6 +303,9 @@ function findProductFromHistory(history: any[], products: any[]): any {
   return null;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// STOCK MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
 async function deductStock(productId: number, quantity: number) {
   try {
     const product = await supabaseQuery("products", "GET", null, `id=eq.${productId}&select=stock_quantity,name`);
@@ -275,15 +324,12 @@ async function restoreStock(productId: number, quantity: number) {
   } catch (e: any) { console.error("restoreStock error:", e); }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ORDER SAVE
+// ═══════════════════════════════════════════════════════════════
 async function processSaveOrder(
-  customerId: number,
-  psid: string,
-  name: string,
-  phone: string,
-  address: string,
-  quantity: number,
-  product: any,
-  prefs: any
+  customerId: number, psid: string, name: string, phone: string,
+  address: string, quantity: number, product: any, prefs: any
 ) {
   const isPreorder = product.stock_quantity <= 0;
   const totalPrice = Number(product.price_mmk) * (quantity || 1);
@@ -292,14 +338,10 @@ async function processSaveOrder(
   const finalGender = genderFromName || existingGender;
   const genderTitle = finalGender === "male" ? "အကို" : finalGender === "female" ? "အမ" : "";
 
-  const order = await saveOrderToDb({
-    customer_id: customerId,
-    product_id: product.id,
-    full_name: name,
-    phone_number: phone,
-    delivery_address: address,
-    quantity: quantity || 1,
-    total_price_mmk: totalPrice,
+  const order = await supabaseQuery("orders", "POST", {
+    customer_id: customerId, product_id: product.id, full_name: name,
+    phone_number: phone, delivery_address: address,
+    quantity: quantity || 1, total_price_mmk: totalPrice,
     status: isPreorder ? "preorder" : "pending",
   });
 
@@ -311,41 +353,26 @@ async function processSaveOrder(
     );
     await notifyOwnerTelegram(
       `🛒 အော်ဒါအသစ် ဝင်လာပါပြီ ${orderLabel}\n\n` +
-      `👤 ${sanitizeTelegramText(name)}\n` +
-      `📞 ${sanitizeTelegramText(phone)}\n` +
-      `📍 ${sanitizeTelegramText(address)}\n` +
-      `📦 ${sanitizeTelegramText(product.name)} x${quantity || 1}\n` +
-      `💰 ${totalPrice.toLocaleString()} MMK\n` +
-      `🔑 Customer ID: ${psid}\n\n` +
-      `👉 Dashboard မှာ confirm လုပ်ပေးပါ`
+      `👤 ${sanitizeTelegramText(name)}\n📞 ${sanitizeTelegramText(phone)}\n` +
+      `📍 ${sanitizeTelegramText(address)}\n📦 ${sanitizeTelegramText(product.name)} x${quantity || 1}\n` +
+      `💰 ${totalPrice.toLocaleString()} MMK\n🔑 Customer ID: ${psid}\n\n👉 Dashboard မှာ confirm လုပ်ပေးပါ`
     );
     await updateContext(customerId, {
       preferences: {
-        address: "",
-        collecting_order: false,
-        pending_product: null,
-        pending_product_id: null,
-        has_active_order: true,
-        detected_gender: finalGender,
-        customer_name: name,
-        gender_title: genderTitle,
+        address: "", collecting_order: false, pending_product: null,
+        pending_product_id: null, has_active_order: true,
+        detected_gender: finalGender, customer_name: name, gender_title: genderTitle,
       },
     });
-    console.log(`Order saved for customer ${customerId} — product: ${product.name}`);
+    console.log(`Order saved for customer ${customerId} — ${product.name}`);
     return true;
   }
   return false;
 }
 
-async function saveOrderToDb(orderData: any) {
-  try {
-    return await supabaseQuery("orders", "POST", orderData);
-  } catch (e: any) {
-    console.error("saveOrder error:", e);
-    return null;
-  }
-}
-
+// ═══════════════════════════════════════════════════════════════
+// CONTEXT
+// ═══════════════════════════════════════════════════════════════
 async function getContext(customerId: number) {
   if (!customerId) return null;
   try {
@@ -360,13 +387,11 @@ async function updateContext(customerId: number, data: any) {
     const existing = await getContext(customerId);
     if (existing) {
       await supabaseQuery("conversation_context", "PATCH",
-        { ...data, updated_at: new Date().toISOString() },
-        `customer_id=eq.${customerId}`
+        { ...data, updated_at: new Date().toISOString() }, `customer_id=eq.${customerId}`
       );
     } else {
       await supabaseQuery("conversation_context", "POST", {
-        customer_id: customerId, ...data,
-        updated_at: new Date().toISOString(),
+        customer_id: customerId, ...data, updated_at: new Date().toISOString(),
       });
     }
   } catch (e: any) { console.error("updateContext error:", e); }
@@ -374,34 +399,28 @@ async function updateContext(customerId: number, data: any) {
 
 function parsePreferences(preferences: any) {
   const defaults = {
-    address: "",
-    collecting_order: false,
-    pending_product: null as string | null,
-    pending_product_id: null as number | null,
-    has_active_order: false,
-    detected_gender: "" as string,
-    customer_name: "" as string,
-    gender_title: "" as string,
+    address: "", collecting_order: false,
+    pending_product: null as string | null, pending_product_id: null as number | null,
+    has_active_order: false, detected_gender: "" as string,
+    customer_name: "" as string, gender_title: "" as string,
   };
   if (!preferences) return defaults;
   try {
     const p = typeof preferences === "string" && preferences.startsWith("{")
-      ? JSON.parse(preferences)
-      : typeof preferences === "object" ? preferences : null;
+      ? JSON.parse(preferences) : typeof preferences === "object" ? preferences : null;
     if (!p) return defaults;
     return {
-      address: p.address ?? "",
-      collecting_order: p.collecting_order || false,
-      pending_product: p.pending_product || null,
-      pending_product_id: p.pending_product_id || null,
-      has_active_order: p.has_active_order || false,
-      detected_gender: p.detected_gender || "",
-      customer_name: p.customer_name || "",
-      gender_title: p.gender_title || "",
+      address: p.address ?? "", collecting_order: p.collecting_order || false,
+      pending_product: p.pending_product || null, pending_product_id: p.pending_product_id || null,
+      has_active_order: p.has_active_order || false, detected_gender: p.detected_gender || "",
+      customer_name: p.customer_name || "", gender_title: p.gender_title || "",
     };
   } catch { return defaults; }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// AI TRAINING CONFIG
+// ═══════════════════════════════════════════════════════════════
 async function getActiveTrainingInstructions(): Promise<string> {
   try {
     const configs = await supabaseQuery("ai_training_config", "GET", null,
@@ -418,19 +437,63 @@ async function getActiveTrainingInstructions(): Promise<string> {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// FACEBOOK SEND — Text (Long message chunk split)
+// Facebook Messenger 2000 char limit ကြောင့် chunk ခွဲပို့မယ်
+// ═══════════════════════════════════════════════════════════════
 async function sendMessage(recipientId: string, text: string) {
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/me/messages`,
-      { recipient: { id: recipientId }, message: { text } },
-      { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
-    );
-  } catch (error: any) {
-    console.error("Send message error:", error?.response?.data || error.message);
-    await notifySystemError(`Facebook Send Error: ${error?.response?.data?.error?.message || error.message}`);
+  const MAX_LENGTH = 1500;
+  if (text.length <= MAX_LENGTH) {
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v18.0/me/messages`,
+        { recipient: { id: recipientId }, message: { text } },
+        { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
+      );
+    } catch (error: any) {
+      console.error("Send message error:", error?.response?.data || error.message);
+      await notifySystemError(`Facebook Send Error: ${error?.response?.data?.error?.message || error.message}`);
+    }
+    return;
+  }
+  // ရှည်ရင် paragraph တွေ ခွဲပြီး chunk ပို့မယ်
+  const paragraphs = text.split(/\n\n+/);
+  let chunk = "";
+  for (const para of paragraphs) {
+    if ((chunk + "\n\n" + para).length > MAX_LENGTH) {
+      if (chunk) {
+        try {
+          await axios.post(
+            `https://graph.facebook.com/v18.0/me/messages`,
+            { recipient: { id: recipientId }, message: { text: chunk.trim() } },
+            { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
+          );
+        } catch (error: any) {
+          console.error("Send chunk error:", error?.response?.data || error.message);
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      chunk = para;
+    } else {
+      chunk = chunk ? chunk + "\n\n" + para : para;
+    }
+  }
+  if (chunk) {
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v18.0/me/messages`,
+        { recipient: { id: recipientId }, message: { text: chunk.trim() } },
+        { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
+      );
+    } catch (error: any) {
+      console.error("Send last chunk error:", error?.response?.data || error.message);
+    }
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// FACEBOOK SEND — Image
+// ═══════════════════════════════════════════════════════════════
 async function sendImageMessage(recipientId: string, imageUrl: string): Promise<void> {
   if (!MEDIA_ENABLED || !imageUrl?.trim()) return;
   try {
@@ -450,39 +513,51 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
   }
 }
 
-async function sendProductImages(recipientId: string, product: any): Promise<void> {
+async function sendProductImages(recipientId: string, product: any, customerId?: number): Promise<void> {
   if (!MEDIA_ENABLED || !product) return;
-  if (product.image_url) await sendImageMessage(recipientId, product.image_url);
+  if (product.image_url) {
+    await sendImageMessage(recipientId, product.image_url);
+    if (customerId) await saveConversation(customerId, "bot", product.image_url, { image_url: product.image_url });
+  }
   if (product.image_url2) {
     await new Promise(resolve => setTimeout(resolve, 500));
     await sendImageMessage(recipientId, product.image_url2);
+    if (customerId) await saveConversation(customerId, "bot", product.image_url2, { image_url: product.image_url2 });
   }
 }
 
-async function sendMultipleProductImages(recipientId: string, productList: any[]): Promise<void> {
+async function sendMultipleProductImages(recipientId: string, productList: any[], customerId?: number): Promise<void> {
   if (!MEDIA_ENABLED || !productList?.length) return;
   for (const product of productList) {
     await sendMessage(recipientId, `${product.name}\n${Number(product.price_mmk).toLocaleString()} ကျပ်`);
     await new Promise(resolve => setTimeout(resolve, 300));
-    if (product.image_url) await sendImageMessage(recipientId, product.image_url);
+    if (product.image_url) {
+      await sendImageMessage(recipientId, product.image_url);
+      if (customerId) await saveConversation(customerId, "bot", product.image_url, { image_url: product.image_url });
+    }
     if (product.image_url2) {
       await new Promise(resolve => setTimeout(resolve, 500));
       await sendImageMessage(recipientId, product.image_url2);
+      if (customerId) await saveConversation(customerId, "bot", product.image_url2, { image_url: product.image_url2 });
     }
     await new Promise(resolve => setTimeout(resolve, 800));
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MAIN AI RESPONSE
+// ═══════════════════════════════════════════════════════════════
 async function generateAIResponse(psid: string, messageText: string): Promise<{
   reply: string;
   productToShow: any | null;
   productsToShow: any[];
+  forceImageRequest: boolean;
 }> {
   const fallback = "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 
   try {
     const customer = await getOrCreateCustomer(psid);
-    if (!customer?.id) return { reply: fallback, productToShow: null, productsToShow: [] };
+    if (!customer?.id) return { reply: fallback, productToShow: null, productsToShow: [], forceImageRequest: false };
 
     const [history, products, context, trainingInstructions] = await Promise.all([
       getConversationHistory(customer.id, 20),
@@ -493,6 +568,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
     const prefs = parsePreferences(context?.preferences);
 
+    // ── Speech pattern gender detect ──
     if (!prefs.detected_gender) {
       const speechGender = detectGenderFromSpeechPattern(messageText);
       if (speechGender) {
@@ -505,6 +581,21 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       }
     }
 
+    // ── CODE-LEVEL IMAGE REQUEST DETECTION ──
+    // AI action မမှီဘဲ Customer ပုံတောင်းရင် ချက်ချင်းပို့မယ်
+    const isImageRequest = detectImageRequest(messageText);
+    if (isImageRequest) {
+      const productFromHistory = findProductFromHistory(history, products);
+      if (productFromHistory) {
+        console.log(`[IMAGE DETECT] Force sending image for customer ${customer.id}`);
+        await saveConversation(customer.id, "customer", messageText);
+        const replyText = `ဟုတ်ကဲ့ပါ${prefs.gender_title ? " " + prefs.gender_title : ""}ခင်ဗျာ 😊`;
+        await saveConversation(customer.id, "bot", replyText);
+        return { reply: replyText, productToShow: null, productsToShow: [productFromHistory], forceImageRequest: true };
+      }
+    }
+
+    // ── First-time greeting ──
     if (!context?.preferences && history.length === 0) {
       await updateContext(customer.id, {
         preferences: { address: "", collecting_order: false, has_active_order: false, detected_gender: "", customer_name: "", gender_title: "" },
@@ -512,7 +603,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
       await saveConversation(customer.id, "customer", messageText);
       await saveConversation(customer.id, "bot", greeting);
-      return { reply: greeting, productToShow: null, productsToShow: [] };
+      return { reply: greeting, productToShow: null, productsToShow: [], forceImageRequest: false };
     }
 
     const productListForAI = products.map((p: any) =>
@@ -533,20 +624,17 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
     } else if (prefs.gender_title) {
       addressRule = `Customer ကို "${prefs.gender_title}" ဟုသာ ခေါ်ပါ။`;
     } else {
-      addressRule = `Customer gender မသေချာသေးသောကြောင့် နာမ်စားဖြင့် မခေါ်ပါနဲ့။ ယဉ်ကျေးစွာ ဆက်သွယ်ပါ။ Customer ရဲ့ နာမည် ရပြီဆိုရင် gender စစ်ပြီးမှ ခေါ်ပါ။`;
+      addressRule = `Customer gender မသေချာသောကြောင့် နာမ်စားဖြင့် မခေါ်ပါနဲ့။ ယဉ်ကျေးစွာ ဆက်သွယ်ပါ။`;
     }
 
     const orderContext = prefs.collecting_order
-      ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။`
-      : "";
+      ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။` : "";
 
     const activeOrderWarning = prefs.has_active_order
-      ? `\n\n🔒 CRITICAL: ဤ Customer ၏ အော်ဒါ submit ပြီးသားဖြစ်သည်။ action="save_order" ကို လုံးဝမသုံးရ။`
-      : "";
+      ? `\n\n🔒 CRITICAL: ဤ Customer ၏ အော်ဒါ submit ပြီးသားဖြစ်သည်။ action="save_order" ကို လုံးဝမသုံးရ။` : "";
 
     const trainingSection = trainingInstructions
-      ? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${trainingInstructions}`
-      : "";
+      ? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${trainingInstructions}` : "";
 
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
@@ -554,10 +642,15 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • ${addressRule}
 • "ရှင့်" "ခင်ဗျားရဲ့" ကဲ့သို့ ရိုင်းသော နာမ်စားများ လုံးဝမသုံးရ။
 • မိမိကိုယ်ကို "ကျွန်တော်" ဟုသာ ရည်ညွှန်းပါ။
-• သဘာဝကျကျ၊ နွေးထွေးစွာ ပြောပါ။ Reply တစ်ခုကို ၄-၅ ကြောင်းထက် မပိုပါနဲ့။
+• သဘာဝကျကျ၊ နွေးထွေးစွာ ပရော်ဖက်ရှင်နယ်ဆန်ဆန် ပြောပါ။
 • Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
 • \\n escape sequence တွေ reply ထဲ မထည့်ရ။
 • Product ID တွေ ([ID:x]) ကို reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
+
+━━━ Reply Length Rules ━━━
+⚠️ ပုံမှန် conversation → ၃-၄ ကြောင်းသာ ပြောပါ။
+⚠️ Customer က အသေးစိတ်ရှင်းပြခိုင်းမှသာ → paragraph တွေခွဲပြီး ရှင်းပြပါ။
+⚠️ Technical details တွေ တပြိုင်တည်း မတန်းစီနဲ့ — customer မေးတာကိုသာ ဖြေပါ။
 
 ━━━ Response Format ━━━
 အမြဲ JSON format နဲ့ respond ရမည်။ JSON key/value တွေ "reply" text ထဲ လုံးဝမပါရ။
@@ -574,9 +667,9 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 ━━━ Action Rules ━━━
 • "none" — ပုံမှန် conversation
 • "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
-  ⚠️ reply ထဲမှာ ပုံပို့မည်ဆိုသော hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
+  ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
 • "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်သောအခါ (product_ids array)
-  ⚠️ reply ထဲမှာ ပုံပို့မည်ဆိုသော hint မထည့်ရ — system က တစ်ခုချင်းစီ ပုံပို့မည်
+  ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က တစ်ခုချင်းစီ ပုံပို့မည်
 • "start_order" — Customer က ဝယ်မည်ဆိုပြီး info မပေးသေးသောအခါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ
@@ -616,20 +709,12 @@ ${productListForAI}`;
     const rawContent = response.data.choices[0]?.message?.content || "{}";
 
     let aiResponse: any = {
-      reply: fallback,
-      action: "none",
-      product_id: null,
-      product_ids: null,
-      order_data: null,
-      collected_data: null,
+      reply: fallback, action: "none", product_id: null,
+      product_ids: null, order_data: null, collected_data: null,
     };
 
     try {
-      const stripped = rawContent
-        .replace(/^```json\s*/i, "")
-        .replace(/^```\s*/i, "")
-        .replace(/```\s*$/i, "")
-        .trim();
+      const stripped = rawContent.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
       if (stripped.startsWith("{")) {
         aiResponse = JSON.parse(stripped);
       } else {
@@ -647,11 +732,13 @@ ${productListForAI}`;
     const safeReply = sanitizeReply(aiResponse.reply || fallback);
     const action = aiResponse.action || "none";
 
+    // ── SHOW SINGLE PRODUCT ──
     let productToShow: any = null;
     if (action === "show_product" && aiResponse.product_id) {
       productToShow = products.find((p: any) => p.id === aiResponse.product_id) || null;
     }
 
+    // ── SHOW MULTIPLE PRODUCTS ──
     let productsToShow: any[] = [];
     if (action === "show_products" && aiResponse.product_ids?.length > 0) {
       productsToShow = aiResponse.product_ids
@@ -659,25 +746,23 @@ ${productListForAI}`;
         .filter(Boolean);
     }
 
+    // ── START ORDER ──
     if (action === "start_order" && aiResponse.order_data) {
       const product =
         products.find((p: any) => p.id === aiResponse.order_data.product_id) ||
         products.find((p: any) => p.name === aiResponse.order_data.product_name) ||
-        products.find((p: any) =>
-          aiResponse.order_data.product_name?.toLowerCase().includes(p.name.toLowerCase())
-        ) || findProductFromHistory(history, products) || null;
-
+        products.find((p: any) => aiResponse.order_data.product_name?.toLowerCase().includes(p.name.toLowerCase())) ||
+        findProductFromHistory(history, products) || null;
       await updateContext(customer.id, {
         preferences: {
-          ...prefs,
-          collecting_order: true,
+          ...prefs, collecting_order: true,
           pending_product: product?.name || aiResponse.order_data.product_name || null,
-          pending_product_id: product?.id || null,
-          has_active_order: false,
+          pending_product_id: product?.id || null, has_active_order: false,
         },
       });
     }
 
+    // ── SAVE ORDER — HYBRID APPROACH ──
     if (action === "save_order" && aiResponse.collected_data && !prefs.has_active_order) {
       const { name, phone, address, quantity } = aiResponse.collected_data;
       const normalizedPhone = phone ? normalizeMyanmarNumbers(phone).replace(/\s+/g, "") : phone;
@@ -685,30 +770,21 @@ ${productListForAI}`;
         const product =
           (prefs.pending_product_id ? products.find((p: any) => p.id === prefs.pending_product_id) : null) ||
           (prefs.pending_product ? products.find((p: any) =>
-            p.name === prefs.pending_product ||
-            p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
+            p.name === prefs.pending_product || p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
           ) : null) ||
           (aiResponse.order_data?.product_id ? products.find((p: any) => p.id === aiResponse.order_data.product_id) : null) ||
-          findProductFromHistory(history, products) ||
-          null;
+          findProductFromHistory(history, products) || null;
 
         if (product) {
           console.log(`[AI PATH] Saving order for customer ${customer.id}`);
           await processSaveOrder(customer.id, psid, name, normalizedPhone, address, quantity || 1, product, prefs);
         } else {
-          await notifyOwnerTelegram(
-            `⚠️ Order product မရှင်းသေး\nCustomer: ${sanitizeTelegramText(name)}\nPhone: ${sanitizeTelegramText(normalizedPhone)}\n🔑 ID: ${psid}`
-          );
-          await notifyOwnerDashboard(customer.id, "human_support_needed",
-            "⚠️ Product မရှင်းသေး Order",
-            `${name} | ${normalizedPhone} | ${address}`
-          );
+          await notifyOwnerTelegram(`⚠️ Order product မရှင်းသေး\nCustomer: ${sanitizeTelegramText(name)}\nPhone: ${sanitizeTelegramText(normalizedPhone)}\n🔑 ID: ${psid}`);
+          await notifyOwnerDashboard(customer.id, "human_support_needed", "⚠️ Product မရှင်းသေး Order", `${name} | ${normalizedPhone} | ${address}`);
         }
       }
     } else if (
-      action !== "save_order" &&
-      !prefs.has_active_order &&
-      prefs.collecting_order &&
+      action !== "save_order" && !prefs.has_active_order && prefs.collecting_order &&
       normalizeMyanmarNumbers(messageText).replace(/\s+/g, "").match(/09\d{7,9}/)
     ) {
       const extracted = extractOrderDataFromMessage(messageText);
@@ -717,11 +793,9 @@ ${productListForAI}`;
         const product =
           (prefs.pending_product_id ? products.find((p: any) => p.id === prefs.pending_product_id) : null) ||
           (prefs.pending_product ? products.find((p: any) =>
-            p.name === prefs.pending_product ||
-            p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
+            p.name === prefs.pending_product || p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
           ) : null) ||
-          findProductFromHistory(history, products) ||
-          null;
+          findProductFromHistory(history, products) || null;
         if (product) {
           console.log(`[FALLBACK PATH] Saving order for customer ${customer.id}`);
           await processSaveOrder(customer.id, psid, name, phone, address, 1, product, prefs);
@@ -729,29 +803,20 @@ ${productListForAI}`;
       }
     }
 
+    // ── NOTIFY OWNER ──
     if (action === "notify_owner") {
-      await notifyOwnerDashboard(customer.id, "human_support_needed",
-        "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`
-      );
-      await notifyOwnerTelegram(
-        `🙋 ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်\n\nCustomer: ${sanitizeTelegramText(messageText)}\n🔑 ID: ${psid}\n\nDashboard မှာ reply လုပ်ပေးပါ`
-      );
+      await notifyOwnerDashboard(customer.id, "human_support_needed", "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`);
+      await notifyOwnerTelegram(`🙋 ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်\n\nCustomer: ${sanitizeTelegramText(messageText)}\n🔑 ID: ${psid}\n\nDashboard မှာ reply လုပ်ပေးပါ`);
     }
 
+    // ── CODE-LEVEL START ORDER SAFETY NET ──
     if (action === "none" && !prefs.collecting_order && !prefs.has_active_order) {
-      const askingForInfo = safeReply.includes("နာမည်") &&
-        (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));
+      const askingForInfo = safeReply.includes("နာမည်") && (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));
       if (askingForInfo) {
         const productFromHistory = findProductFromHistory(history, products);
         if (productFromHistory) {
           await updateContext(customer.id, {
-            preferences: {
-              ...prefs,
-              collecting_order: true,
-              pending_product: productFromHistory.name,
-              pending_product_id: productFromHistory.id,
-              has_active_order: false,
-            },
+            preferences: { ...prefs, collecting_order: true, pending_product: productFromHistory.name, pending_product_id: productFromHistory.id, has_active_order: false },
           });
         }
       }
@@ -759,24 +824,24 @@ ${productListForAI}`;
 
     await saveConversation(customer.id, "customer", messageText);
     await saveConversation(customer.id, "bot", safeReply);
-    return { reply: safeReply, productToShow, productsToShow };
+    return { reply: safeReply, productToShow, productsToShow, forceImageRequest: false };
 
   } catch (error: any) {
     console.error("generateAIResponse error:", error);
     await notifySystemError(`generateAIResponse: ${error.message}`);
-    return { reply: fallback, productToShow: null, productsToShow: [] };
+    return { reply: fallback, productToShow: null, productsToShow: [], forceImageRequest: false };
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ORDER CONFIRM
+// ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
   if (!order_id) return;
   try {
     const confirmedAt = new Date().toISOString();
-    await supabaseQuery("orders", "PATCH",
-      { status: "confirmed", confirmed_at: confirmedAt },
-      `id=eq.${order_id}`
-    );
+    await supabaseQuery("orders", "PATCH", { status: "confirmed", confirmed_at: confirmedAt }, `id=eq.${order_id}`);
     if (product_id && quantity) await deductStock(product_id, quantity);
     if (customer_psid) {
       const customer = await getOrCreateCustomer(customer_psid);
@@ -789,13 +854,7 @@ async function handleOrderConfirm(body: any): Promise<void> {
           purchasedProductName = productData?.[0]?.name || null;
         }
         await updateContext(customer.id, {
-          preferences: {
-            ...prefs,
-            has_active_order: false,
-            purchased_product: purchasedProductName,
-            purchased_product_id: product_id || null,
-            confirmed_at: confirmedAt,
-          },
+          preferences: { ...prefs, has_active_order: false, purchased_product: purchasedProductName, purchased_product_id: product_id || null, confirmed_at: confirmedAt },
         });
       }
     }
@@ -805,6 +864,9 @@ async function handleOrderConfirm(body: any): Promise<void> {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ORDER CANCEL
+// ═══════════════════════════════════════════════════════════════
 async function handleOrderCancel(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity, was_confirmed } = body;
   if (!order_id) return;
@@ -816,9 +878,7 @@ async function handleOrderCancel(body: any): Promise<void> {
       if (customer?.id) {
         const context = await getContext(customer.id);
         const prefs = parsePreferences(context?.preferences);
-        await updateContext(customer.id, {
-          preferences: { ...prefs, has_active_order: false },
-        });
+        await updateContext(customer.id, { preferences: { ...prefs, has_active_order: false } });
       }
     }
   } catch (e: any) {
@@ -827,6 +887,9 @@ async function handleOrderCancel(body: any): Promise<void> {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MAIN WEBHOOK HANDLER
+// ═══════════════════════════════════════════════════════════════
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -882,46 +945,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const customer = await getOrCreateCustomer(senderId);
 
                 if (await isBotPausedForCustomer(customer)) {
-                  if (event.message?.text) {
-                    await saveConversation(customer.id, "customer", event.message.text);
-                  }
+                  if (event.message?.text) await saveConversation(customer.id, "customer", event.message.text);
                   return;
                 }
 
                 if (event.message?.text) {
-                  const { reply, productToShow, productsToShow } = await generateAIResponse(senderId, event.message.text);
+                  const { reply, productToShow, productsToShow, forceImageRequest } = await generateAIResponse(senderId, event.message.text);
 
                   const freshCheck = await supabaseQuery("customers", "GET", null, `psid=eq.${senderId}&select=bot_paused`);
                   if (freshCheck?.[0]?.bot_paused) return;
 
                   await sendMessage(senderId, reply);
 
-                  // ── SHOW SINGLE PRODUCT — ပုံပို့ပြီး Dashboard အတွက် image URL သွင်းမယ် ──
                   if (productToShow) {
                     await new Promise(resolve => setTimeout(resolve, 300));
-                    await sendProductImages(senderId, productToShow);
-                    // Dashboard conversations ထဲ image URL သွင်းမယ်
-                    if (productToShow.image_url) {
-                      await saveConversation(customer.id, "bot", productToShow.image_url, { image_url: productToShow.image_url });
-                    }
-                    if (productToShow.image_url2) {
-                      await saveConversation(customer.id, "bot", productToShow.image_url2, { image_url: productToShow.image_url2 });
-                    }
+                    await sendProductImages(senderId, productToShow, customer.id);
                   }
 
-                  // ── SHOW MULTIPLE PRODUCTS — ပုံပို့ပြီး Dashboard အတွက် image URL သွင်းမယ် ──
                   if (productsToShow.length > 0) {
                     await new Promise(resolve => setTimeout(resolve, 300));
-                    await sendMultipleProductImages(senderId, productsToShow);
-                    // Dashboard conversations ထဲ image URL တွေ သွင်းမယ်
-                    for (const p of productsToShow) {
-                      if (p.image_url) {
-                        await saveConversation(customer.id, "bot", p.image_url, { image_url: p.image_url });
-                      }
-                      if (p.image_url2) {
-                        await saveConversation(customer.id, "bot", p.image_url2, { image_url: p.image_url2 });
-                      }
-                    }
+                    await sendMultipleProductImages(senderId, productsToShow, customer.id);
                   }
 
                 } else if (event.message) {

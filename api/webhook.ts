@@ -59,7 +59,7 @@ async function detectGenderFromName(name: string): Promise<string> {
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "google/gemini-2.5-flash",
+        model: "anthropic/claude-haiku-4-5",
         messages: [{ role: "user", content: `နာမည် "${name}" က ယောကျ်ားလေးလား မိန်းကလေးလား? JSON format နဲ့သာ:\n{"gender":"male"} or {"gender":"female"} or {"gender":"unknown"}` }],
         max_tokens: 20,
         temperature: 0.1,
@@ -691,14 +691,15 @@ ${productListForAI}`;
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "google/gemini-2.5-flash",
+        model: "anthropic/claude-haiku-4-5",
         messages: [
           { role: "system", content: systemPrompt },
           ...historyMessages,
           { role: "user", content: messageText },
         ],
-        max_tokens: 800,
-        temperature: 0.7,
+        max_tokens: 1000,
+temperature: 0.3,
+response_format: { type: "json_object" }
       },
       {
         headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },

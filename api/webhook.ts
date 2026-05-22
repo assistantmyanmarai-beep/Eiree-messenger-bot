@@ -26,21 +26,6 @@ function normalizeMyanmarNumbers(text: string): string {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CODE-LEVEL IMAGE REQUEST DETECTOR
-// Customer message ထဲမှာ ပုံတောင်းတဲ့ keywords ရှာမယ်
-// AI action မမှီဘဲ တိုက်ရိုက် ပုံပို့မယ်
-// ═══════════════════════════════════════════════════════════════
-function detectImageRequest(text: string): boolean {
-  const imageKeywords = [
-    "ပုံ", "photo", "ဓာတ်ပုံ", "ပြပေး", "ကြည့်ချင်",
-    "မြင်ချင်", "show", "image", "pic", "ပုံလေး",
-    "ပုံပြ", "ကြည့်ပါ", "ပြပါ"
-  ];
-  const lowerText = text.toLowerCase();
-  return imageKeywords.some(k => lowerText.includes(k));
-}
-
-// ═══════════════════════════════════════════════════════════════
 // GENDER DETECT FROM SPEECH PATTERN
 // ═══════════════════════════════════════════════════════════════
 function detectGenderFromSpeechPattern(text: string): string {
@@ -438,8 +423,7 @@ async function getActiveTrainingInstructions(): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND — Text (Long message chunk split)
-// Facebook Messenger 2000 char limit ကြောင့် chunk ခွဲပို့မယ်
+// FACEBOOK SEND — Text (chunk split for long messages)
 // ═══════════════════════════════════════════════════════════════
 async function sendMessage(recipientId: string, text: string) {
   const MAX_LENGTH = 1500;
@@ -456,7 +440,6 @@ async function sendMessage(recipientId: string, text: string) {
     }
     return;
   }
-  // ရှည်ရင် paragraph တွေ ခွဲပြီး chunk ပို့မယ်
   const paragraphs = text.split(/\n\n+/);
   let chunk = "";
   for (const para of paragraphs) {
@@ -468,9 +451,7 @@ async function sendMessage(recipientId: string, text: string) {
             { recipient: { id: recipientId }, message: { text: chunk.trim() } },
             { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
           );
-        } catch (error: any) {
-          console.error("Send chunk error:", error?.response?.data || error.message);
-        }
+        } catch (error: any) { console.error("Send chunk error:", error?.response?.data || error.message); }
         await new Promise(resolve => setTimeout(resolve, 500));
       }
       chunk = para;
@@ -485,9 +466,7 @@ async function sendMessage(recipientId: string, text: string) {
         { recipient: { id: recipientId }, message: { text: chunk.trim() } },
         { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
       );
-    } catch (error: any) {
-      console.error("Send last chunk error:", error?.response?.data || error.message);
-    }
+    } catch (error: any) { console.error("Send last chunk error:", error?.response?.data || error.message); }
   }
 }
 
@@ -551,13 +530,12 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
   reply: string;
   productToShow: any | null;
   productsToShow: any[];
-  forceImageRequest: boolean;
 }> {
   const fallback = "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 
   try {
     const customer = await getOrCreateCustomer(psid);
-    if (!customer?.id) return { reply: fallback, productToShow: null, productsToShow: [], forceImageRequest: false };
+    if (!customer?.id) return { reply: fallback, productToShow: null, productsToShow: [] };
 
     const [history, products, context, trainingInstructions] = await Promise.all([
       getConversationHistory(customer.id, 20),
@@ -581,20 +559,6 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       }
     }
 
-    // ── CODE-LEVEL IMAGE REQUEST DETECTION ──
-    // AI action မမှီဘဲ Customer ပုံတောင်းရင် ချက်ချင်းပို့မယ်
-    const isImageRequest = detectImageRequest(messageText);
-    if (isImageRequest) {
-      const productFromHistory = findProductFromHistory(history, products);
-      if (productFromHistory) {
-        console.log(`[IMAGE DETECT] Force sending image for customer ${customer.id}`);
-        await saveConversation(customer.id, "customer", messageText);
-        const replyText = `ဟုတ်ကဲ့ပါ${prefs.gender_title ? " " + prefs.gender_title : ""}ခင်ဗျာ 😊`;
-        await saveConversation(customer.id, "bot", replyText);
-        return { reply: replyText, productToShow: null, productsToShow: [productFromHistory], forceImageRequest: true };
-      }
-    }
-
     // ── First-time greeting ──
     if (!context?.preferences && history.length === 0) {
       await updateContext(customer.id, {
@@ -603,7 +567,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
       await saveConversation(customer.id, "customer", messageText);
       await saveConversation(customer.id, "bot", greeting);
-      return { reply: greeting, productToShow: null, productsToShow: [], forceImageRequest: false };
+      return { reply: greeting, productToShow: null, productsToShow: [] };
     }
 
     const productListForAI = products.map((p: any) =>
@@ -730,7 +694,7 @@ ${productListForAI}`;
     }
 
     const safeReply = sanitizeReply(aiResponse.reply || fallback);
-    const action = aiResponse.action || "none";
+    let action = aiResponse.action || "none";
 
     // ── SHOW SINGLE PRODUCT ──
     let productToShow: any = null;
@@ -744,6 +708,45 @@ ${productListForAI}`;
       productsToShow = aiResponse.product_ids
         .map((id: number) => products.find((p: any) => p.id === id))
         .filter(Boolean);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // POST-AI SMART IMAGE SAFETY NET
+    // AI က action="none" ပြန်လာပြီး Customer က ပုံတောင်းနေရင်
+    // ဒီ Customer ရဲ့ recent history ထဲမှာ mention လုပ်ခဲ့တဲ့
+    // product နာမည်တွေနဲ့ match လုပ်ပြီး ပုံပို့ပေးမယ်
+    // ─────────────────────────────────────────────────────────────
+    // မှတ်ချက်: ဒါက pre-intercept မဟုတ်ဘဲ post-AI safety net ပါ
+    // AI ကို အရင်ဆုံး ဆုံးဖြတ်ခိုင်းပြီး action="none" မှသာ run မယ်
+    // Customer တစ်ယောက်စီ ကိုယ်ပိုင် history ကနေ ရှာတာမို့
+    // တစ်ဦးနဲ့တစ်ဦး မရောသွားဘူး
+    // ══════════════════════════════════════════════════════════════
+    if (action === "none" && productToShow === null && productsToShow.length === 0) {
+      const imageKeywords = ["ပုံ", "photo", "ဓာတ်ပုံ", "ပြပေး", "ကြည့်ချင်", "မြင်ချင်", "show", "image", "ပုံလေး", "ပုံပြ", "ကြည့်ပါ", "ပြပါ"];
+      const isAskingForImage = imageKeywords.some(k => messageText.toLowerCase().includes(k.toLowerCase()));
+
+      if (isAskingForImage) {
+        // ဒီ Customer ရဲ့ recent history (နောက်ဆုံး ၅ ကြောင်း) + current message ပေါင်းပြီး စစ်မယ်
+        const recentHistoryText = history.slice(0, 5).map((h: any) => h.message_text || "").join(" ");
+        const combinedText = (messageText + " " + recentHistoryText).toLowerCase();
+
+        // History ထဲမှာ mention လုပ်ခဲ့တဲ့ product နာမည်တွေ ရှာမယ်
+        const matchedProducts = products.filter((p: any) =>
+          combinedText.includes(p.name.toLowerCase())
+        );
+
+        if (matchedProducts.length === 1) {
+          // Product တစ်ခုတည်း match ဆိုရင် show_product
+          productToShow = matchedProducts[0];
+          action = "show_product";
+          console.log(`[IMAGE SAFETY NET] Single product: ${matchedProducts[0].name}`);
+        } else if (matchedProducts.length > 1) {
+          // Product တစ်ခုထက်ပိုရင် show_products (အကုန်ပါမယ်)
+          productsToShow = matchedProducts;
+          action = "show_products";
+          console.log(`[IMAGE SAFETY NET] Multiple products: ${matchedProducts.map((p: any) => p.name).join(", ")}`);
+        }
+      }
     }
 
     // ── START ORDER ──
@@ -824,12 +827,12 @@ ${productListForAI}`;
 
     await saveConversation(customer.id, "customer", messageText);
     await saveConversation(customer.id, "bot", safeReply);
-    return { reply: safeReply, productToShow, productsToShow, forceImageRequest: false };
+    return { reply: safeReply, productToShow, productsToShow };
 
   } catch (error: any) {
     console.error("generateAIResponse error:", error);
     await notifySystemError(`generateAIResponse: ${error.message}`);
-    return { reply: fallback, productToShow: null, productsToShow: [], forceImageRequest: false };
+    return { reply: fallback, productToShow: null, productsToShow: [] };
   }
 }
 
@@ -950,7 +953,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
 
                 if (event.message?.text) {
-                  const { reply, productToShow, productsToShow, forceImageRequest } = await generateAIResponse(senderId, event.message.text);
+                  const { reply, productToShow, productsToShow } = await generateAIResponse(senderId, event.message.text);
 
                   const freshCheck = await supabaseQuery("customers", "GET", null, `psid=eq.${senderId}&select=bot_paused`);
                   if (freshCheck?.[0]?.bot_paused) return;

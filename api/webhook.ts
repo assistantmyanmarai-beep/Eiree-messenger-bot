@@ -487,8 +487,9 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
   } catch (e: any) {
     console.error("sendImageMessage error:", e?.response?.data || e.message);
     await notifyOwnerTelegram(
-      `⚠️ ပုံပို့၍ မရဘဲ error ဖြစ်နေပါတယ်\nURL: ${imageUrl}\nError: ${e?.response?.data?.error?.message || e.message}\nCustomer ဆီ ပုံကိုယ်တိုင် ပို့ပေးပါ`
+      `⚠️ ပုံပို့၍ မရဘဲ error ဖြစ်နေပါတယ်\nURL: ${imageUrl}\nError: ${e?.response?.data?.error?.message || e.message}\n🔑 Customer ID: ${recipientId}\n👉 Dashboard မှာ ကြည့်ပြီး ပုံကိုယ်တိုင် ပို့ပေးပါ`
     );
+    await sendMessage(recipientId, "ကျွန်တော်တို့ team မှ မကြာမီ ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏");
   }
 }
 

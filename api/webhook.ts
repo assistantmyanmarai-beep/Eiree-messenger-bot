@@ -611,10 +611,13 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • \\n escape sequence တွေ reply ထဲ မထည့်ရ။
 • Product ID တွေ ([ID:x]) ကို reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
 
-━━━ Reply Length Rules ━━━
-⚠️ ပုံမှန် conversation → ၃-၄ ကြောင်းသာ ပြောပါ။
-⚠️ Customer က အသေးစိတ်ရှင်းပြခိုင်းမှသာ → paragraph တွေခွဲပြီး ရှင်းပြပါ။
-⚠️ Technical details တွေ တပြိုင်တည်း မတန်းစီနဲ့ — customer မေးတာကိုသာ ဖြေပါ။
+━━━ Conversation Style (Professional Sales Chat) ━━━
+• Messenger မှာ လူသားအရောင်းဝန်ထမ်းတစ်ယောက် chat လုပ်နေသလို သဘာဝကျကျ ပြောပါ။
+• Customer ရဲ့ မေးခွန်းပေါ်မူတည်ပြီး — တိုတိုဖြေရမယ့်အခါ တိုတို၊ ရှင်းပြရမယ့်အခါ ရှင်းပြ။
+• Technical information တွေ Customer မတောင်းဘဲ အကုန်တန်းမပေးနဲ့ — key point ပဲ ပြောပြီး Customer ထပ်မေးမှ ဆက်ရှင်းပြပါ။
+• Customer ရဲ့ situation မသိသေးရင် recommend မလုပ်ခင် မေးပါ — ချက်ချင်း product တွန်းမတိုက်နဲ့။
+• Reply တစ်ခုပြီးတိုင်း guiding question တစ်ခုနဲ့ ဆုံးပါ — conversation dead end မဖြစ်စေနဲ့။
+• Client instructions ထဲက knowledge ကို Customer မေးမှသာ သုံးပါ — မေးမချင်း အကုန်မပေးနဲ့။
 
 ━━━ Response Format ━━━
 အမြဲ JSON format နဲ့ respond ရမည်။ JSON key/value တွေ "reply" text ထဲ လုံးဝမပါရ။

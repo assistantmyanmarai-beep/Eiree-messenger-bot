@@ -411,11 +411,25 @@ async function getActiveTrainingInstructions(): Promise<string> {
     const configs = await supabaseQuery("ai_training_config", "GET", null,
       "is_active=eq.true&select=system_prompt,content&order=created_at.asc");
     if (!configs || configs.length === 0) return "";
-    const instructions = configs
-      .map((c: any) => c.content || c.system_prompt || "")
+
+    // Tone/Style — AI လုံးဝလိုက်နာရမည့် rules
+    const rules = configs
+      .filter((c: any) => c.system_prompt === "tone")
+      .map((c: any) => c.content || "")
       .filter((text: string) => text.trim().length > 0)
       .join("\n• ");
-    return instructions ? `• ${instructions}` : "";
+
+    // ကျန်တာအကုန် — Knowledge Base (context ပေါ်မူတည်ပြီး သုံးမည်)
+    const knowledge = configs
+      .filter((c: any) => c.system_prompt !== "tone")
+      .map((c: any) => c.content || "")
+      .filter((text: string) => text.trim().length > 0)
+      .join("\n• ");
+
+    let result = "";
+    if (rules) result += `━━━ Tone & Style Rules (အမြဲလိုက်နာရမည်) ━━━\n• ${rules}`;
+    if (knowledge) result += `\n\n━━━ Knowledge Base (Customer မေးမှသာ သုံးပါ — context နဲ့ကိုက်ညီမှ ထုတ်သုံးပါ) ━━━\n• ${knowledge}`;
+    return result;
   } catch (e: any) {
     console.error("getActiveTrainingInstructions error:", e.message);
     return "";

@@ -480,7 +480,7 @@ async function sendImageMessage(recipientId: string, imageUrl: string): Promise<
       `https://graph.facebook.com/v18.0/me/messages`,
       {
         recipient: { id: recipientId },
-        message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: false } } }
+        message: { attachment: { type: "image", payload: { url: imageUrl, is_reusable: true } } }
       },
       { params: { access_token: FACEBOOK_PAGE_ACCESS_TOKEN }, headers: { "Content-Type": "application/json" } }
     );

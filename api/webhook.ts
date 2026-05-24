@@ -650,8 +650,10 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • "none" — ပုံမှန် conversation
 • "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
   ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
+  ⚠️ Customer က ပုံကောင်းတယ်၊ လှတယ်၊ ကြည့်ရတာကောင်းတယ် စသည်ဖြင့် ချီးမွမ်းနေရင် ပုံထပ်မပို့ရ — show_product မသုံးရ
 • "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်သောအခါ (product_ids array)
   ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က တစ်ခုချင်းစီ ပုံပို့မည်
+  ⚠️ Customer က ချီးမွမ်းနေရင်၊ သဘောကျကြောင်းပြောနေရင် show_products မသုံးရ — တိတိကျကျ ပုံကြည့်ချင်မှသာ သုံးပါ
 • "start_order" — Customer က ဝယ်မည်ဆိုပြီး info မပေးသေးသောအခါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
 • "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ

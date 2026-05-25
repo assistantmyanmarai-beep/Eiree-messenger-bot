@@ -104,6 +104,7 @@ function sanitizeReply(text: string): string {
     .replace(/^[\*\-]\s+/gm, "")
     .replace(/^\d+\.\s+/gm, "")
     .replace(/#{1,6}\s/g, "")
+    .replace(/https?:\/\/[^\s\u1000-\u109f]+/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return cleaned || "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
@@ -651,9 +652,11 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 - "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
   ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
   ⚠️ Customer က ပုံကောင်းတယ်၊ လှတယ်၊ ကြည့်ရတာကောင်းတယ် စသည်ဖြင့် ချီးမွမ်းနေရင် ပုံထပ်မပို့ရ — show_product မသုံးရ
-- "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်သောအခါ (product_ids array)
+- "show_products" — Customer က product နှစ်ခုနဲ့အထက် ပုံကြည့်ချင်သောအခါ (product_ids array ထည့်ပါ)
   ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က တစ်ခုချင်းစီ ပုံပို့မည်
+  ⚠️ reply ထဲ URL တွေ လုံးဝမထည့်ရ — product_ids array ထဲမှာသာ ID တွေထည့်ပါ
   ⚠️ Customer က ချီးမွမ်းနေရင်၊ သဘောကျကြောင်းပြောနေရင် show_products မသုံးရ — တိတိကျကျ ပုံကြည့်ချင်မှသာ သုံးပါ
+  ဥပမာ — product_ids: [2, 3] (ID တွေသာ — URL တွေမဟုတ်ရ)
 - "start_order" — Customer က ဝယ်မည်ဆိုပြီး info မပေးသေးသောအခါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
   ⚠️ order_data ထဲမှာ product_id ကို Products list ထဲက ID number တိတိကျကျ ထည့်ရမည်

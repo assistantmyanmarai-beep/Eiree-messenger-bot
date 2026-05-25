@@ -540,11 +540,14 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
     const orderContext = prefs.collecting_order
       ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။` : "";
 
-    const activeOrderWarning = prefs.has_active_order
-      ? `\n\n🔒 CRITICAL: ဤ Customer ၏ အော်ဒါ submit ပြီးသားဖြစ်သည်။ action="save_order" ကို လုံးဝမသုံးရ။` : "";
-
-    const trainingSection = trainingInstructions
-      ? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${trainingInstructions}` : "";
+      const activeOrderWarning = prefs.has_active_order
+      ? `\n\n🔒 CRITICAL — has_active_order=TRUE:
+    - action="save_order" လုံးဝမသုံးရ
+    - action="start_order" လုံးဝမသုံးရ
+    - Customer ကို ဈေးနှုန်းပေါင်းပြောနိုင်သည် — သဘာဝကျကျ ဆက်စကားပြောပါ
+    - "အော်ဒါအတည်ပြုပေးပါ့မယ်ခင်ဗျာ" ဆိုသောစကားမျိုးနဲ့ Customer ကို အသိပေးပါ
+    - Customer Service Team၊ Dashboard၊ Manual Order ဆိုသောစကား Customer ကို လုံးဝမပြောရ
+    - နောက်ထပ် product မှာချင်ရင် → action="notify_owner" ချက်ချင်းသုံးရမည်` : "";
 
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 

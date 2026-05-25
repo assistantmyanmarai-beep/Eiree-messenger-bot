@@ -14,9 +14,6 @@ const OWNER_TELEGRAM_CHAT_ID = process.env.OWNER_TELEGRAM_CHAT_ID;
 const AUTO_RESUME_MS = 30 * 60 * 1000;
 const MEDIA_ENABLED = true;
 
-// ═══════════════════════════════════════════════════════════════
-// MYANMAR NUMBER NORMALIZER
-// ═══════════════════════════════════════════════════════════════
 function normalizeMyanmarNumbers(text: string): string {
   return text
     .replace(/၀/g, "0").replace(/၁/g, "1").replace(/၂/g, "2")
@@ -25,9 +22,6 @@ function normalizeMyanmarNumbers(text: string): string {
     .replace(/၉/g, "9");
 }
 
-// ═══════════════════════════════════════════════════════════════
-// GENDER DETECT FROM SPEECH PATTERN
-// ═══════════════════════════════════════════════════════════════
 function detectGenderFromSpeechPattern(text: string): string {
   if (!text) return "";
   if (/ရှင့်|ရှင်|နော်\s*$|ကွယ်/.test(text)) return "female";
@@ -35,9 +29,6 @@ function detectGenderFromSpeechPattern(text: string): string {
   return "";
 }
 
-// ═══════════════════════════════════════════════════════════════
-// GENDER DETECT FROM NAME (AI)
-// ═══════════════════════════════════════════════════════════════
 async function detectGenderFromName(name: string): Promise<string> {
   if (!name || name.length < 2) return "";
   try {
@@ -59,17 +50,11 @@ async function detectGenderFromName(name: string): Promise<string> {
   } catch { return ""; }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// TELEGRAM SANITIZER
-// ═══════════════════════════════════════════════════════════════
 function sanitizeTelegramText(text: string): string {
   if (!text) return "";
   return text.replace(/[*_`[\]]/g, "");
 }
 
-// ═══════════════════════════════════════════════════════════════
-// OUTPUT SANITIZER
-// ═══════════════════════════════════════════════════════════════
 function sanitizeReply(text: string): string {
   if (!text) return "";
   let cleaned = text
@@ -110,9 +95,6 @@ function sanitizeReply(text: string): string {
   return cleaned || "ကျွန်တော်တို့ team မှ မကြာမီ ပြန်လည် ဆက်သွယ်ပေးပါမယ်ခင်ဗျာ 🙏";
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ORDER DATA EXTRACTOR
-// ═══════════════════════════════════════════════════════════════
 function extractOrderDataFromMessage(messageText: string): {
   name: string | null; phone: string | null; address: string | null;
 } {
@@ -127,9 +109,6 @@ function extractOrderDataFromMessage(messageText: string): {
   return result;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SUPABASE HELPER
-// ═══════════════════════════════════════════════════════════════
 async function supabaseQuery(table: string, method: string, body?: any, query?: string) {
   const url = `${SUPABASE_URL}/rest/v1/${table}${query ? `?${query}` : ""}`;
   const headers: any = {
@@ -150,9 +129,6 @@ async function supabaseQuery(table: string, method: string, body?: any, query?: 
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// NOTIFICATIONS
-// ═══════════════════════════════════════════════════════════════
 async function notifySystemError(msg: string) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
   try {
@@ -181,9 +157,6 @@ async function notifyOwnerDashboard(customerId: number, type: string, title: str
   } catch (e: any) { console.error("Dashboard notify error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// DEDUPLICATION
-// ═══════════════════════════════════════════════════════════════
 async function isMessageProcessed(messageId: string): Promise<boolean> {
   try {
     const result = await supabaseQuery("processed_messages", "GET", null, `message_id=eq.${messageId}&select=message_id`);
@@ -197,9 +170,6 @@ async function markMessageProcessed(messageId: string) {
   } catch (e: any) { console.error("Mark processed error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CUSTOMER
-// ═══════════════════════════════════════════════════════════════
 async function getOrCreateCustomer(psid: string) {
   try {
     const existing = await supabaseQuery("customers", "GET", null, `psid=eq.${psid}&select=*`);
@@ -212,9 +182,6 @@ async function getOrCreateCustomer(psid: string) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// BOT PAUSE CHECK WITH AUTO-RESUME
-// ═══════════════════════════════════════════════════════════════
 async function isBotPausedForCustomer(customer: any): Promise<boolean> {
   if (!customer?.bot_paused) return false;
   if (!customer?.paused_at) return true;
@@ -226,9 +193,6 @@ async function isBotPausedForCustomer(customer: any): Promise<boolean> {
   return true;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MESSAGE ECHO HANDLER
-// ═══════════════════════════════════════════════════════════════
 async function handleMessageEcho(event: any): Promise<void> {
   try {
     if (!event.message?.is_echo) return;
@@ -248,9 +212,6 @@ async function handleMessageEcho(event: any): Promise<void> {
   } catch (e: any) { console.error("handleMessageEcho error:", e.message); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CONVERSATION
-// ═══════════════════════════════════════════════════════════════
 async function getConversationHistory(customerId: number, limit = 20) {
   if (!customerId) return [];
   try {
@@ -269,9 +230,6 @@ async function saveConversation(customerId: number, messageType: string, message
   } catch (e: any) { console.error("saveConversation error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PRODUCTS
-// ═══════════════════════════════════════════════════════════════
 async function getProducts() {
   try {
     return (await supabaseQuery("products", "GET", null, "is_active=eq.true&select=*")) || [];
@@ -289,9 +247,6 @@ function findProductFromHistory(history: any[], products: any[]): any {
   return null;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// STOCK MANAGEMENT
-// ═══════════════════════════════════════════════════════════════
 async function deductStock(productId: number, quantity: number) {
   try {
     const product = await supabaseQuery("products", "GET", null, `id=eq.${productId}&select=stock_quantity,name`);
@@ -310,9 +265,6 @@ async function restoreStock(productId: number, quantity: number) {
   } catch (e: any) { console.error("restoreStock error:", e); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ORDER SAVE
-// ═══════════════════════════════════════════════════════════════
 async function processSaveOrder(
   customerId: number, psid: string, name: string, phone: string,
   address: string, quantity: number, product: any, prefs: any
@@ -356,9 +308,6 @@ async function processSaveOrder(
   return false;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CONTEXT
-// ═══════════════════════════════════════════════════════════════
 async function getContext(customerId: number) {
   if (!customerId) return null;
   try {
@@ -404,29 +353,21 @@ function parsePreferences(preferences: any) {
   } catch { return defaults; }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// AI TRAINING CONFIG
-// ═══════════════════════════════════════════════════════════════
 async function getActiveTrainingInstructions(): Promise<string> {
   try {
     const configs = await supabaseQuery("ai_training_config", "GET", null,
       "is_active=eq.true&select=system_prompt,content&order=created_at.asc");
     if (!configs || configs.length === 0) return "";
-
-    // Tone/Style — AI လုံးဝလိုက်နာရမည့် rules
     const rules = configs
       .filter((c: any) => c.system_prompt === "tone")
       .map((c: any) => c.content || "")
       .filter((text: string) => text.trim().length > 0)
       .join("\n• ");
-
-    // ကျန်တာအကုန် — Knowledge Base (context ပေါ်မူတည်ပြီး သုံးမည်)
     const knowledge = configs
       .filter((c: any) => c.system_prompt !== "tone")
       .map((c: any) => c.content || "")
       .filter((text: string) => text.trim().length > 0)
       .join("\n• ");
-
     let result = "";
     if (rules) result += `━━━ Tone & Style Rules (အမြဲလိုက်နာရမည်) ━━━\n• ${rules}`;
     if (knowledge) result += `\n\n━━━ Knowledge Base (Customer မေးမှသာ သုံးပါ — context နဲ့ကိုက်ညီမှ ထုတ်သုံးပါ) ━━━\n• ${knowledge}`;
@@ -437,9 +378,6 @@ async function getActiveTrainingInstructions(): Promise<string> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND — Text (chunk split for long messages)
-// ═══════════════════════════════════════════════════════════════
 async function sendMessage(recipientId: string, text: string) {
   const MAX_LENGTH = 1500;
   if (text.length <= MAX_LENGTH) {
@@ -485,9 +423,6 @@ async function sendMessage(recipientId: string, text: string) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// FACEBOOK SEND — Image
-// ═══════════════════════════════════════════════════════════════
 async function sendImageMessage(recipientId: string, imageUrl: string): Promise<void> {
   if (!MEDIA_ENABLED || !imageUrl?.trim()) return;
   try {
@@ -539,9 +474,6 @@ async function sendMultipleProductImages(recipientId: string, productList: any[]
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MAIN AI RESPONSE
-// ═══════════════════════════════════════════════════════════════
 async function generateAIResponse(psid: string, messageText: string): Promise<{
   reply: string;
   productToShow: any | null;
@@ -562,7 +494,6 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
     const prefs = parsePreferences(context?.preferences);
 
-    // ── Speech pattern gender detect ──
     if (!prefs.detected_gender) {
       const speechGender = detectGenderFromSpeechPattern(messageText);
       if (speechGender) {
@@ -575,7 +506,6 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       }
     }
 
-    // ── First-time greeting ──
     if (!context?.preferences && history.length === 0) {
       await updateContext(customer.id, {
         preferences: { address: "", collecting_order: false, has_active_order: false, detected_gender: "", customer_name: "", gender_title: "" },
@@ -669,6 +599,8 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 - "notify_owner" — အောက်ပါအခြေအနေများတွင် သုံးရမည်
   - AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း၊ delivery date
   - has_active_order=true ဖြစ်နေပြီး Customer က နောက်ထပ် product တစ်ခု ထပ်မှာချင်သောအခါ
+    → Customer ကို reply မှာ သဘာဝကျကျ ဈေးနှုန်းပေါင်းပြီး ဆက်စကားပြောပါ
+    → notify_owner action တစ်ပြိုင်တည်းသုံးပါ
   ⚠️ has_active_order=true ဖြစ်နေချိန်မှာ save_order လုံးဝမသုံးရ — notify_owner သာသုံးရမည်
 
 ━━━ Context ━━━
@@ -740,17 +672,7 @@ ${productListForAI}`;
         .filter(Boolean);
     }
 
-    // ══════════════════════════════════════════════════════════════
-    // POST-AI SMART IMAGE SAFETY NET
-    // AI က action="none" ပြန်လာပြီး Customer က ပုံတောင်းနေရင်
-    // ဒီ Customer ရဲ့ recent history ထဲမှာ mention လုပ်ခဲ့တဲ့
-    // product နာမည်တွေနဲ့ match လုပ်ပြီး ပုံပို့ပေးမယ်
-    // ─────────────────────────────────────────────────────────────
-    // မှတ်ချက်: ဒါက pre-intercept မဟုတ်ဘဲ post-AI safety net ပါ
-    // AI ကို အရင်ဆုံး ဆုံးဖြတ်ခိုင်းပြီး action="none" မှသာ run မယ်
-    // Customer တစ်ယောက်စီ ကိုယ်ပိုင် history ကနေ ရှာတာမို့
-    // တစ်ဦးနဲ့တစ်ဦး မရောသွားဘူး
-    // ══════════════════════════════════════════════════════════════
+    // ── POST-AI SMART IMAGE SAFETY NET ──
     if (action === "none" && productToShow === null && productsToShow.length === 0) {
       const imageKeywords = ["ပုံ", "photo", "ဓာတ်ပုံ", "ပြပေး", "ကြည့်ချင်", "မြင်ချင်", "show", "image", "ပုံလေး", "ပုံပြ", "ကြည့်ပါ", "ပြပါ"];
       const isAskingForImage = imageKeywords.some(k => messageText.toLowerCase().includes(k.toLowerCase()));
@@ -758,22 +680,10 @@ ${productListForAI}`;
       if (isAskingForImage) {
         const currentText = messageText.toLowerCase();
 
-        // ══════════════════════════════════════════════════════════
-        // အဆင့် ၁ — Customer အခု ပို့လိုက်တဲ့ message ထဲမှာ
-        // product name တိုက်ရိုက်ပါသလား အရင်စစ်မယ်
-        // ဥပမာ — "6 Stage ပုံပြပါ" → 6 Stage ကိုပဲ ပို့မယ်
-        // ══════════════════════════════════════════════════════════
         let matchedProducts = products.filter((p: any) =>
           currentText.includes(p.name.toLowerCase())
         );
 
-        // ══════════════════════════════════════════════════════════
-        // အဆင့် ၂ — Current message မှာ product name မပါရင်
-        // (ဥပမာ "ပုံပြပါဦး" လို့ပဲ ပြောရင်)
-        // History ကို တစ်ကြောင်းချင်းစီ စစ်ပြီး
-        // နောက်ဆုံး mention လုပ်ခဲ့တဲ့ product ၁ ခုတည်းပဲ ယူမယ်
-        // ပုံဟောင်းတွေ ရောမပါအောင် combined မစစ်တော့ဘူး
-        // ══════════════════════════════════════════════════════════
         if (matchedProducts.length === 0) {
           for (const h of history.slice(0, 5)) {
             const historyText = (h.message_text || "").toLowerCase();
@@ -781,15 +691,12 @@ ${productListForAI}`;
               historyText.includes(p.name.toLowerCase())
             );
             if (found.length > 0) {
-              matchedProducts = [found[0]]; // ၁ ခုတည်းပဲ ယူ — ပုံများများမပို့ဘူး
-              break; // တွေ့ပြီဆိုရင် ရပ် — ဆက်မစစ်တော့ဘူး
+              matchedProducts = [found[0]];
+              break;
             }
           }
         }
 
-        // ══════════════════════════════════════════════════════════
-        // အဆင့် ၃ — တွေ့ရှိတဲ့ product အလိုက် action ပြောင်းမယ်
-        // ══════════════════════════════════════════════════════════
         if (matchedProducts.length === 1) {
           productToShow = matchedProducts[0];
           action = "show_product";
@@ -803,22 +710,22 @@ ${productListForAI}`;
     }
 
     // ── START ORDER ──
-if (action === "start_order" && aiResponse.order_data) {
-  const orderProductName = (aiResponse.order_data.product_name || "").toLowerCase();
-  const product =
-    products.find((p: any) => p.id === aiResponse.order_data.product_id) ||
-    products.find((p: any) => p.name === aiResponse.order_data.product_name) ||
-    products.find((p: any) => {
-      const pName = p.name.toLowerCase();
-      const stageMatch = orderProductName.match(/(\d+)\s*stage/i);
-      const pStageMatch = pName.match(/(\d+)\s*stage/i);
-      if (stageMatch && pStageMatch && stageMatch[1] !== pStageMatch[1]) return false;
-      const hasABS = orderProductName.includes("abs");
-      const hasSS = orderProductName.includes("ss304") || orderProductName.includes("ss 304");
-      if (hasABS && !pName.includes("abs")) return false;
-      if (hasSS && !pName.includes("ss304") && !pName.includes("ss 304")) return false;
-      return pName.includes(orderProductName) || orderProductName.includes(pName);
-    }) || null;
+    if (action === "start_order" && aiResponse.order_data) {
+      const orderProductName = (aiResponse.order_data.product_name || "").toLowerCase();
+      const product =
+        products.find((p: any) => p.id === aiResponse.order_data.product_id) ||
+        products.find((p: any) => p.name === aiResponse.order_data.product_name) ||
+        products.find((p: any) => {
+          const pName = p.name.toLowerCase();
+          const stageMatch = orderProductName.match(/(\d+)\s*stage/i);
+          const pStageMatch = pName.match(/(\d+)\s*stage/i);
+          if (stageMatch && pStageMatch && stageMatch[1] !== pStageMatch[1]) return false;
+          const hasABS = orderProductName.includes("abs");
+          const hasSS = orderProductName.includes("ss304") || orderProductName.includes("ss 304");
+          if (hasABS && !pName.includes("abs")) return false;
+          if (hasSS && !pName.includes("ss304") && !pName.includes("ss 304")) return false;
+          return pName.includes(orderProductName) || orderProductName.includes(pName);
+        }) || null;
       await updateContext(customer.id, {
         preferences: {
           ...prefs, collecting_order: true,
@@ -869,20 +776,55 @@ if (action === "start_order" && aiResponse.order_data) {
     }
 
     // ── NOTIFY OWNER ──
+    // has_active_order=true ဆိုရင် Customer name + message ပါတဲ့ notification ပို့မယ်
+    // ပုံမှန် notify_owner ဆိုရင် generic notification ပို့မယ်
     if (action === "notify_owner") {
-      await notifyOwnerDashboard(customer.id, "human_support_needed", "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`);
-      await notifyOwnerTelegram(`🙋 ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်\n\nCustomer: ${sanitizeTelegramText(messageText)}\n🔑 ID: ${psid}\n\nDashboard မှာ reply လုပ်ပေးပါ`);
+      const customerName = prefs.customer_name || "";
+      if (prefs.has_active_order && customerName) {
+        await notifyOwnerDashboard(customer.id, "human_support_needed",
+          "🛒 နောက်ထပ်အော်ဒါ ထပ်မှာချင်နေတယ်",
+          `${customerName} က ထပ်မှာချင်နေပါတယ်။ Dashboard မှာ Manual order ထည့်ပေးပါ။`);
+        await notifyOwnerTelegram(
+          `🛒 နောက်ထပ်အော်ဒါ ထပ်မှာချင်နေပါတယ်\n\n` +
+          `👤 ${sanitizeTelegramText(customerName)}\n` +
+          `💬 "${sanitizeTelegramText(messageText)}"\n` +
+          `🔑 Customer ID: ${psid}\n\n` +
+          `👉 Dashboard မှာ Manual order ထည့်ပေးပါ`
+        );
+      } else {
+        await notifyOwnerDashboard(customer.id, "human_support_needed",
+          "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`);
+        await notifyOwnerTelegram(
+          `🙋 ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်\n\n` +
+          `Customer: ${sanitizeTelegramText(messageText)}\n` +
+          `🔑 ID: ${psid}\n\n` +
+          `Dashboard မှာ reply လုပ်ပေးပါ`
+        );
+      }
     }
 
     // ── CODE-LEVEL START ORDER SAFETY NET ──
+    // AI က start_order action မထုတ်ဘဲ name/phone/address တောင်းရင်
+    // bot ရဲ့ reply ထဲမှာ product name ကို ရှာပြီး pending_product_id သိမ်းမယ်
     if (action === "none" && !prefs.collecting_order && !prefs.has_active_order) {
-      const askingForInfo = safeReply.includes("နာမည်") && (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));
+      const askingForInfo = safeReply.includes("နာမည်") &&
+        (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));
       if (askingForInfo) {
-        const productFromHistory = findProductFromHistory(history, products);
-        if (productFromHistory) {
+        const replyLower = safeReply.toLowerCase();
+        const matchedProduct = products.find((p: any) =>
+          replyLower.includes(p.name.toLowerCase())
+        );
+        if (matchedProduct) {
           await updateContext(customer.id, {
-            preferences: { ...prefs, collecting_order: true, pending_product: productFromHistory.name, pending_product_id: productFromHistory.id, has_active_order: false },
+            preferences: {
+              ...prefs,
+              collecting_order: true,
+              pending_product: matchedProduct.name,
+              pending_product_id: matchedProduct.id,
+              has_active_order: false
+            },
           });
+          console.log(`[SAFETY NET] Product found in reply: ${matchedProduct.name} (ID: ${matchedProduct.id})`);
         }
       }
     }
@@ -898,9 +840,6 @@ if (action === "start_order" && aiResponse.order_data) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ORDER CONFIRM
-// ═══════════════════════════════════════════════════════════════
 async function handleOrderConfirm(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity } = body;
   if (!order_id) return;
@@ -929,9 +868,6 @@ async function handleOrderConfirm(body: any): Promise<void> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ORDER CANCEL
-// ═══════════════════════════════════════════════════════════════
 async function handleOrderCancel(body: any): Promise<void> {
   const { order_id, customer_psid, product_id, quantity, was_confirmed } = body;
   if (!order_id) return;
@@ -952,9 +888,6 @@ async function handleOrderCancel(body: any): Promise<void> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MAIN WEBHOOK HANDLER
-// ═══════════════════════════════════════════════════════════════
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   res.setHeader("Access-Control-Allow-Origin", "*");

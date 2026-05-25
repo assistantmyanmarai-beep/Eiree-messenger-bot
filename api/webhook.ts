@@ -647,19 +647,26 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 }
 
 ━━━ Action Rules ━━━
-• "none" — ပုံမှန် conversation
-• "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
+- "none" — ပုံမှန် conversation
+- "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
   ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
   ⚠️ Customer က ပုံကောင်းတယ်၊ လှတယ်၊ ကြည့်ရတာကောင်းတယ် စသည်ဖြင့် ချီးမွမ်းနေရင် ပုံထပ်မပို့ရ — show_product မသုံးရ
-• "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်သောအခါ (product_ids array)
+- "show_products" — Customer က product အများကြီး ပုံကြည့်ချင်သောအခါ (product_ids array)
   ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က တစ်ခုချင်းစီ ပုံပို့မည်
   ⚠️ Customer က ချီးမွမ်းနေရင်၊ သဘောကျကြောင်းပြောနေရင် show_products မသုံးရ — တိတိကျကျ ပုံကြည့်ချင်မှသာ သုံးပါ
-• "start_order" — Customer က ဝယ်မည်ဆိုပြီး info မပေးသေးသောအခါ
+- "start_order" — Customer က ဝယ်မည်ဆိုပြီး info မပေးသေးသောအခါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
-• "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ
+  ⚠️ order_data ထဲမှာ product_id ကို Products list ထဲက ID number တိတိကျကျ ထည့်ရမည်
+  ⚠️ product_id မသေချာရင်လည်း product_name တိတိကျကျ ထည့်ပြီး null မထားရ
+  ⚠️ has_active_order=true ဖြစ်နေရင် start_order မသုံးရ — notify_owner သာသုံးရမည်
+  ဥပမာ — order_data: { "product_id": 2, "product_name": "6 Stage UF Drinking Water Purifier (ABS)" }
+- "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
   ⚠️ collected_data ထဲ phone မှာ မြန်မာဂဏန်းပါရင် 09... အဖြစ် ပြောင်းပြီး ထည့်ပေးပါ
-• "notify_owner" — AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း၊ delivery date
+- "notify_owner" — အောက်ပါအခြေအနေများတွင် သုံးရမည်
+  - AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း၊ delivery date
+  - has_active_order=true ဖြစ်နေပြီး Customer က နောက်ထပ် product တစ်ခု ထပ်မှာချင်သောအခါ
+  ⚠️ has_active_order=true ဖြစ်နေချိန်မှာ save_order လုံးဝမသုံးရ — notify_owner သာသုံးရမည်
 
 ━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
@@ -746,22 +753,45 @@ ${productListForAI}`;
       const isAskingForImage = imageKeywords.some(k => messageText.toLowerCase().includes(k.toLowerCase()));
 
       if (isAskingForImage) {
-        // ဒီ Customer ရဲ့ recent history (နောက်ဆုံး ၅ ကြောင်း) + current message ပေါင်းပြီး စစ်မယ်
-        const recentHistoryText = history.slice(0, 5).map((h: any) => h.message_text || "").join(" ");
-        const combinedText = (messageText + " " + recentHistoryText).toLowerCase();
+        const currentText = messageText.toLowerCase();
 
-        // History ထဲမှာ mention လုပ်ခဲ့တဲ့ product နာမည်တွေ ရှာမယ်
-        const matchedProducts = products.filter((p: any) =>
-          combinedText.includes(p.name.toLowerCase())
+        // ══════════════════════════════════════════════════════════
+        // အဆင့် ၁ — Customer အခု ပို့လိုက်တဲ့ message ထဲမှာ
+        // product name တိုက်ရိုက်ပါသလား အရင်စစ်မယ်
+        // ဥပမာ — "6 Stage ပုံပြပါ" → 6 Stage ကိုပဲ ပို့မယ်
+        // ══════════════════════════════════════════════════════════
+        let matchedProducts = products.filter((p: any) =>
+          currentText.includes(p.name.toLowerCase())
         );
 
+        // ══════════════════════════════════════════════════════════
+        // အဆင့် ၂ — Current message မှာ product name မပါရင်
+        // (ဥပမာ "ပုံပြပါဦး" လို့ပဲ ပြောရင်)
+        // History ကို တစ်ကြောင်းချင်းစီ စစ်ပြီး
+        // နောက်ဆုံး mention လုပ်ခဲ့တဲ့ product ၁ ခုတည်းပဲ ယူမယ်
+        // ပုံဟောင်းတွေ ရောမပါအောင် combined မစစ်တော့ဘူး
+        // ══════════════════════════════════════════════════════════
+        if (matchedProducts.length === 0) {
+          for (const h of history.slice(0, 5)) {
+            const historyText = (h.message_text || "").toLowerCase();
+            const found = products.filter((p: any) =>
+              historyText.includes(p.name.toLowerCase())
+            );
+            if (found.length > 0) {
+              matchedProducts = [found[0]]; // ၁ ခုတည်းပဲ ယူ — ပုံများများမပို့ဘူး
+              break; // တွေ့ပြီဆိုရင် ရပ် — ဆက်မစစ်တော့ဘူး
+            }
+          }
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // အဆင့် ၃ — တွေ့ရှိတဲ့ product အလိုက် action ပြောင်းမယ်
+        // ══════════════════════════════════════════════════════════
         if (matchedProducts.length === 1) {
-          // Product တစ်ခုတည်း match ဆိုရင် show_product
           productToShow = matchedProducts[0];
           action = "show_product";
           console.log(`[IMAGE SAFETY NET] Single product: ${matchedProducts[0].name}`);
         } else if (matchedProducts.length > 1) {
-          // Product တစ်ခုထက်ပိုရင် show_products (အကုန်ပါမယ်)
           productsToShow = matchedProducts;
           action = "show_products";
           console.log(`[IMAGE SAFETY NET] Multiple products: ${matchedProducts.map((p: any) => p.name).join(", ")}`);
@@ -770,12 +800,22 @@ ${productListForAI}`;
     }
 
     // ── START ORDER ──
-    if (action === "start_order" && aiResponse.order_data) {
-      const product =
-        products.find((p: any) => p.id === aiResponse.order_data.product_id) ||
-        products.find((p: any) => p.name === aiResponse.order_data.product_name) ||
-        products.find((p: any) => aiResponse.order_data.product_name?.toLowerCase().includes(p.name.toLowerCase())) ||
-        findProductFromHistory(history, products) || null;
+if (action === "start_order" && aiResponse.order_data) {
+  const orderProductName = (aiResponse.order_data.product_name || "").toLowerCase();
+  const product =
+    products.find((p: any) => p.id === aiResponse.order_data.product_id) ||
+    products.find((p: any) => p.name === aiResponse.order_data.product_name) ||
+    products.find((p: any) => {
+      const pName = p.name.toLowerCase();
+      const stageMatch = orderProductName.match(/(\d+)\s*stage/i);
+      const pStageMatch = pName.match(/(\d+)\s*stage/i);
+      if (stageMatch && pStageMatch && stageMatch[1] !== pStageMatch[1]) return false;
+      const hasABS = orderProductName.includes("abs");
+      const hasSS = orderProductName.includes("ss304") || orderProductName.includes("ss 304");
+      if (hasABS && !pName.includes("abs")) return false;
+      if (hasSS && !pName.includes("ss304") && !pName.includes("ss 304")) return false;
+      return pName.includes(orderProductName) || orderProductName.includes(pName);
+    }) || null;
       await updateContext(customer.id, {
         preferences: {
           ...prefs, collecting_order: true,
@@ -795,8 +835,7 @@ ${productListForAI}`;
           (prefs.pending_product ? products.find((p: any) =>
             p.name === prefs.pending_product || p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
           ) : null) ||
-          (aiResponse.order_data?.product_id ? products.find((p: any) => p.id === aiResponse.order_data.product_id) : null) ||
-          findProductFromHistory(history, products) || null;
+          (aiResponse.order_data?.product_id ? products.find((p: any) => p.id === aiResponse.order_data.product_id) : null) || null;
 
         if (product) {
           console.log(`[AI PATH] Saving order for customer ${customer.id}`);

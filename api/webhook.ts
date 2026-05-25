@@ -549,6 +549,9 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
     - Customer Service Team၊ Dashboard၊ Manual Order ဆိုသောစကား Customer ကို လုံးဝမပြောရ
     - နောက်ထပ် product မှာချင်ရင် → action="notify_owner" ချက်ချင်းသုံးရမည်` : "";
 
+    const trainingSection = trainingInstructions
+  ? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${trainingInstructions}` : "";
+  
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
 ━━━ Customer ဆက်သွယ်ပုံ ━━━

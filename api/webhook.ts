@@ -588,11 +588,15 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 - "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
   ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
   ⚠️ Customer က ပုံကောင်းတယ်၊ လှတယ်၊ ကြည့်ရတာကောင်းတယ် စသည်ဖြင့် ချီးမွမ်းနေရင် ပုံထပ်မပို့ရ — show_product မသုံးရ
-- "show_products" — Customer က product နှစ်ခုနဲ့အထက် ပုံကြည့်ချင်သောအခါ (product_ids array ထည့်ပါ)
+- "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
+  ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
+  ⚠️ Customer က ပုံကြည့်ချင်တယ်ဆိုရင် action=none မသုံးရ — show_product သာသုံးရမည်
+  ⚠️ Customer က ချီးမွမ်းနေရင်သာ show_product မသုံးရ
+
+- "show_products" — Customer က product နှစ်ခုနဲ့အထက် (သို့) အားလုံး ပုံကြည့်ချင်သောအခါ
   ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က တစ်ခုချင်းစီ ပုံပို့မည်
-  ⚠️ reply ထဲ URL တွေ လုံးဝမထည့်ရ — product_ids array ထဲမှာသာ ID တွေထည့်ပါ
-  ⚠️ Customer က ချီးမွမ်းနေရင်၊ သဘောကျကြောင်းပြောနေရင် show_products မသုံးရ — တိတိကျကျ ပုံကြည့်ချင်မှသာ သုံးပါ
-  ဥပမာ — product_ids: [2, 3] (ID တွေသာ — URL တွေမဟုတ်ရ)
+  ⚠️ "ကျန်တဲ့ပုံ"၊ "အကုန်ပြပေး"၊ "အားလုံးပြပေး" ဆိုရင် conversation မှာ ပြောဖူးတဲ့ product အကုန် product_ids ထဲ ထည့်ပြီး show_products သုံးရမည်
+  ⚠️ action=none နဲ့ reply မှာ "ပုံပို့မယ်" လို့ ပြောခြင်း လုံးဝမလုပ်ရ — show_products သာသုံးရမည်
 - "start_order" — Customer က ဝယ်မည်ဆိုပြီး info မပေးသေးသောအခါ
   ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
   ⚠️ order_data ထဲမှာ product_id ကို Products list ထဲက ID number တိတိကျကျ ထည့်ရမည်
@@ -691,16 +695,29 @@ ${productListForAI}`;
         );
 
         if (matchedProducts.length === 0) {
-          for (const h of history.slice(0, 5)) {
-            const historyText = (h.message_text || "").toLowerCase();
-            const found = products.filter((p: any) =>
-              historyText.includes(p.name.toLowerCase())
-            );
-            if (found.length > 0) {
-              matchedProducts = [found[0]];
-              break;
-            }
-          }
+          // Bot ရဲ့ နောက်ဆုံး text message တစ်ခုကိုပဲ ကြည့်မယ်
+          const lastBotMessage = history
+            .filter((h: any) => h.message_type === "bot" && 
+              h.message_text && !h.metadata?.image_url)
+            .slice(0, 1)
+            .map((h: any) => (h.message_text || "").toLowerCase())
+            .join("");
+        
+          matchedProducts = products.filter((p: any) =>
+            lastBotMessage.includes(p.name.toLowerCase())
+          );
+        
+          // ပို့ပြီးသားပုံ ဖယ်မယ်
+          const sentImageUrls = new Set(
+            history
+              .filter((h: any) => h.message_type === "bot" && h.metadata?.image_url)
+              .map((h: any) => h.metadata.image_url)
+          );
+          const unsentProducts = matchedProducts.filter((p: any) =>
+            !sentImageUrls.has(p.image_url)
+          );
+          if (unsentProducts.length > 0) matchedProducts = unsentProducts;
+        }
         }
 
         if (matchedProducts.length === 1) {

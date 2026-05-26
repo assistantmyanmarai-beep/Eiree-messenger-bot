@@ -718,7 +718,6 @@ ${productListForAI}`;
           );
           if (unsentProducts.length > 0) matchedProducts = unsentProducts;
         }
-        }
 
         if (matchedProducts.length === 1) {
           productToShow = matchedProducts[0];

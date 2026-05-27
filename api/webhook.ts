@@ -606,12 +606,15 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 - "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
   ⚠️ collected_data ထဲ phone မှာ မြန်မာဂဏန်းပါရင် 09... အဖြစ် ပြောင်းပြီး ထည့်ပေးပါ
-- "notify_owner" — အောက်ပါအခြေအနေများတွင် သုံးရမည်
-  - AI မဖြေနိုင်သော မေးခွန်း၊ မသေချာသော ဈေးနှုန်း၊ delivery date
-  - has_active_order=true ဖြစ်နေပြီး Customer က နောက်ထပ် product တစ်ခု ထပ်မှာချင်သောအခါ
-    → Customer ကို reply မှာ သဘာဝကျကျ ဈေးနှုန်းပေါင်းပြီး ဆက်စကားပြောပါ
-    → notify_owner action တစ်ပြိုင်တည်းသုံးပါ
-  ⚠️ has_active_order=true ဖြစ်နေချိန်မှာ save_order လုံးဝမသုံးရ — notify_owner သာသုံးရမည်
+- "notify_owner" — အောက်ပါ ၂ မျိုးသာ သုံးရမည် —
+
+  REASON 1: inquiry — AI မဖြေနိုင်သော မေးခွန်း၊ delivery date၊ တိတိကျကျ မသိသောဈေးနှုန်း
+  → order_data: { "reason": "inquiry" }
+
+  REASON 2: multiple_order — has_active_order=true ဖြစ်နေပြီး Customer က တိတိကျကျ နောက်ထပ် product ထပ်ဝယ်မည်ဟု ပြောသောအခါ
+  → Customer message မှာ "ယူမယ်/ဝယ်မယ်/မှာမယ်/ထပ်ယူ/ပါယူ/နှစ်ခုလုံး/တစ်ခါတည်းပါ" keyword တိတိကျကျ ပါမှသာ သုံးရမည်
+  → order_data: { "reason": "multiple_order", "product_name": "product နာမည်တိတိကျကျ" }
+  → has_active_order=true မဟုတ်ရင် multiple_order မသုံးရ
 
 ━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
@@ -798,32 +801,46 @@ ${productListForAI}`;
     }
 
     // ── NOTIFY OWNER ──
-    // has_active_order=true ဆိုရင် Customer name + message ပါတဲ့ notification ပို့မယ်
-    // ပုံမှန် notify_owner ဆိုရင် generic notification ပို့မယ်
-    if (action === "notify_owner") {
-      const customerName = prefs.customer_name || "";
-      if (prefs.has_active_order && customerName) {
-        await notifyOwnerDashboard(customer.id, "human_support_needed",
-          "🛒 နောက်ထပ်အော်ဒါ ထပ်မှာချင်နေတယ်",
-          `${customerName} က ထပ်မှာချင်နေပါတယ်။ Dashboard မှာ Manual order ထည့်ပေးပါ။`);
-        await notifyOwnerTelegram(
-          `🛒 နောက်ထပ်အော်ဒါ ထပ်မှာချင်နေပါတယ်\n\n` +
-          `👤 ${sanitizeTelegramText(customerName)}\n` +
-          `💬 "${sanitizeTelegramText(messageText)}"\n` +
-          `🔑 Customer ID: ${psid}\n\n` +
-          `👉 Dashboard မှာ Manual order ထည့်ပေးပါ`
-        );
-      } else {
-        await notifyOwnerDashboard(customer.id, "human_support_needed",
-          "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`);
-        await notifyOwnerTelegram(
-          `🙋 ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်\n\n` +
-          `Customer: ${sanitizeTelegramText(messageText)}\n` +
-          `🔑 ID: ${psid}\n\n` +
-          `Dashboard မှာ reply လုပ်ပေးပါ`
-        );
-      }
-    }
+if (action === "notify_owner") {
+  const reason = aiResponse.order_data?.reason || "inquiry";
+  const msgLower = messageText.toLowerCase();
+
+  // Buy keyword safety net
+  const buyKeywords = ["ယူမယ်", "ဝယ်မယ်", "မှာမယ်", "ထပ်ယူ", "ပါယူ", "နှစ်ခုလုံး", "တစ်ခါတည်းပါ", "ထပ်မှာ"];
+  const hasBuyIntent = buyKeywords.some(k => msgLower.includes(k));
+
+  if (reason === "multiple_order" && prefs.has_active_order && hasBuyIntent) {
+    const existingOrder = await supabaseQuery("orders", "GET", null,
+      `customer_id=eq.${customer.id}&order=created_at.desc&limit=1&select=full_name,phone_number,delivery_address`
+    );
+    const info = existingOrder?.[0];
+    const productName = aiResponse.order_data?.product_name || "";
+
+    await notifyOwnerDashboard(customer.id, "human_support_needed",
+      "🛒 နောက်ထပ်အော်ဒါ ထပ်မှာချင်နေတယ်",
+      `${info?.full_name || prefs.customer_name} က ${productName} ထပ်မှာချင်နေပါတယ်။ Dashboard မှာ Manual order ထည့်ပေးပါ။`
+    );
+    await notifyOwnerTelegram(
+      `🛒 နောက်ထပ်အော်ဒါ ထပ်မှာချင်နေပါတယ်\n\n` +
+      `👤 ${sanitizeTelegramText(info?.full_name || prefs.customer_name || "")}\n` +
+      `📞 ${sanitizeTelegramText(info?.phone_number || "")}\n` +
+      `📍 ${sanitizeTelegramText(info?.delivery_address || "")}\n` +
+      `📦 ${sanitizeTelegramText(productName)}\n` +
+      `🔑 Customer ID: ${psid}\n\n` +
+      `👉 Dashboard မှာ Manual order ထည့်ပေးပါ`
+    );
+  } else if (reason === "inquiry") {
+    await notifyOwnerDashboard(customer.id, "human_support_needed",
+      "🙋 ကိုယ်တိုင်ဖြေရမည်", `Customer: ${messageText}`
+    );
+    await notifyOwnerTelegram(
+      `🙋 ကိုယ်တိုင်ဖြေပေးဖို့ လိုအပ်ပါတယ်\n\n` +
+      `Customer: ${sanitizeTelegramText(messageText)}\n` +
+      `🔑 ID: ${psid}\n\n` +
+      `Dashboard မှာ reply လုပ်ပေးပါ`
+    );
+  }
+}
 
     // ── CODE-LEVEL START ORDER SAFETY NET ──
     // AI က start_order action မထုတ်ဘဲ name/phone/address တောင်းရင်

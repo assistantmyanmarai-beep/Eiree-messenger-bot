@@ -893,6 +893,33 @@ if (action === "none" && prefs.has_active_order) {
   }
 }
 
+// ── CONFIRM ORDER SAFETY NET ──
+// Customer က confirm ပြောလိုက်တဲ့အချိန် AI က save_order မထုတ်ရင်
+// context ထဲက pending info နဲ့ order save လုပ်မယ်
+if (action === "none" && prefs.collecting_order && !prefs.has_active_order) {
+  const confirmKeywords = ["ဟုတ်ကဲ့", "မှန်ပါတယ်", "မှန်တယ်", "အဆင်ပြေတယ်", 
+    "ကောင်းပြီ", "ok", "okay", "yes", "ရပါတယ်", "ရတယ်"];
+  const isConfirming = confirmKeywords.some(k => 
+    messageText.toLowerCase().includes(k.toLowerCase())
+  );
+  
+  if (isConfirming && prefs.pending_product_id) {
+    const product = products.find((p: any) => p.id === prefs.pending_product_id);
+    const lastBotMsg = history
+      .filter((h: any) => h.message_type === "bot" && h.message_text && !h.metadata?.image_url)
+      .slice(0, 1)[0];
+    
+    // Last bot message ထဲမှာ name/phone/address ပါနေလားစစ်မယ်
+    if (lastBotMsg && product) {
+      const extracted = extractOrderDataFromMessage(lastBotMsg.message_text);
+      if (extracted.name && extracted.phone && extracted.address) {
+        console.log(`[CONFIRM SAFETY NET] Saving order for customer ${customer.id}`);
+        await processSaveOrder(customer.id, psid, extracted.name, extracted.phone, 
+          extracted.address, 1, product, prefs);
+      }
+    }
+  }
+}
     // ── CODE-LEVEL START ORDER SAFETY NET ──
     // AI က start_order action မထုတ်ဘဲ name/phone/address တောင်းရင်
     // bot ရဲ့ reply ထဲမှာ product name ကို ရှာပြီး pending_product_id သိမ်းမယ်

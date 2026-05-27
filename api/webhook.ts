@@ -829,7 +829,7 @@ if (action === "notify_owner") {
 ];
   const hasBuyIntent = buyKeywords.some(k => msgLower.includes(k));
 
-  if (reason === "multiple_order" && prefs.has_active_order && hasBuyIntent) {
+  if (reason === "multiple_order" && prefs.has_active_order) {
     const existingOrder = await supabaseQuery("orders", "GET", null,
       `customer_id=eq.${customer.id}&order=created_at.desc&limit=1&select=full_name,phone_number,delivery_address`
     );

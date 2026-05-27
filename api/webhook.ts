@@ -813,7 +813,20 @@ if (action === "notify_owner") {
   const msgLower = messageText.toLowerCase();
 
   // Buy keyword safety net
-  const buyKeywords = ["ယူမယ်", "ဝယ်မယ်", "မှာမယ်", "ထပ်ယူ", "ပါယူ", "နှစ်ခုလုံး", "တစ်ခါတည်းပါ", "ထပ်မှာ"];
+  const buyKeywords = [
+  "ယူမယ်", "ယူလိုက်မယ်", "ယူချင်တယ်",
+  "ဝယ်မယ်", "ဝယ်လိုက်မယ်", "ဝယ်ချင်တယ်",
+  "မှာမယ်", "မှာလိုက်မယ်", "မှာချင်တယ်",
+  "ထပ်ယူ", "ထပ်ဝယ်", "ထပ်မှာ",
+  "ပါယူ", "ပါဝယ်", "ပါမှာ",
+  "တစ်ခါတည်းယူ", "တစ်ခါတည်းဝယ်", "တစ်ခါတည်းမှာ",
+  "တွဲယူ", "တွဲဝယ်", "တွဲမှာ",
+  "နှစ်ခုလုံး", "သုံးခုလုံး", "အကုန်ယူ",
+  "order တင်", "order လုပ်",
+  "ဒါပါယူ", "အဲ့ဒါပါယူ", "ဒါလည်းယူ",
+  "လည်းယူ", "လည်းဝယ်", "လည်းမှာ",
+  "ကောယူ", "ကောဝယ်", "ကောမှာ"
+];
   const hasBuyIntent = buyKeywords.some(k => msgLower.includes(k));
 
   if (reason === "multiple_order" && prefs.has_active_order && hasBuyIntent) {
@@ -846,6 +859,45 @@ if (action === "notify_owner") {
       `🔑 ID: ${psid}\n\n` +
       `Dashboard မှာ reply လုပ်ပေးပါ`
     );
+  }
+}
+// ── MULTIPLE ORDER CODE-LEVEL SAFETY NET ──
+// AI က has_active_order=true အချိန် notify_owner မထုတ်ရင်
+// buy keyword စစ်ပြီး code ကနေ notify_owner trigger လုပ်မယ်
+if (action === "none" && prefs.has_active_order) {
+  const msgLower = messageText.toLowerCase();
+  const buyKeywords = [
+    "ယူမယ်", "ယူလိုက်မယ်", "ယူချင်တယ်",
+    "ဝယ်မယ်", "ဝယ်လိုက်မယ်", "ဝယ်ချင်တယ်",
+    "မှာမယ်", "မှာလိုက်မယ်", "မှာချင်တယ်",
+    "ထပ်ယူ", "ထပ်ဝယ်", "ထပ်မှာ",
+    "ပါယူ", "ပါဝယ်", "ပါမှာ",
+    "တစ်ခါတည်းယူ", "တစ်ခါတည်းဝယ်", "တစ်ခါတည်းမှာ",
+    "တွဲယူ", "တွဲဝယ်", "တွဲမှာ",
+    "နှစ်ခုလုံး", "သုံးခုလုံး", "အကုန်ယူ",
+    "order တင်", "order လုပ်",
+    "ဒါပါယူ", "အဲ့ဒါပါယူ", "ဒါလည်းယူ",
+    "လည်းယူ", "လည်းဝယ်", "လည်းမှာ",
+    "ကောယူ", "ကောဝယ်", "ကောမှာ"
+  ];
+  const hasBuyIntent = buyKeywords.some(k => msgLower.includes(k));
+
+  if (hasBuyIntent) {
+    action = "notify_owner";
+    // AI reply ထဲမှာ product name ရှာမယ်
+    const replyLower = safeReply.toLowerCase();
+    const mentionedProduct = products.find((p: any) =>
+      replyLower.includes(p.name.toLowerCase())
+    );
+    if (mentionedProduct && !aiResponse.order_data) {
+      aiResponse.order_data = {
+        reason: "multiple_order",
+        product_name: mentionedProduct.name
+      };
+    } else if (!aiResponse.order_data) {
+      aiResponse.order_data = { reason: "multiple_order", product_name: "" };
+    }
+    console.log(`[MULTIPLE ORDER SAFETY NET] Buy intent detected: ${messageText}`);
   }
 }
 

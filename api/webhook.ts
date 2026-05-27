@@ -698,17 +698,25 @@ ${productListForAI}`;
         );
 
         if (matchedProducts.length === 0) {
-          // Bot ရဲ့ နောက်ဆုံး text message တစ်ခုကိုပဲ ကြည့်မယ်
-          const lastBotMessage = history
-            .filter((h: any) => h.message_type === "bot" && 
-              h.message_text && !h.metadata?.image_url)
-            .slice(0, 1)
-            .map((h: any) => (h.message_text || "").toLowerCase())
-            .join("");
-        
+          // AI current reply ကို အရင်စစ်မယ်
+          const currentReplyLower = safeReply.toLowerCase();
           matchedProducts = products.filter((p: any) =>
-            lastBotMessage.includes(p.name.toLowerCase())
+            currentReplyLower.includes(p.name.toLowerCase())
           );
+        
+          // current reply မှာ မတွေ့ရင် lastBotMessage ကြည့်
+          if (matchedProducts.length === 0) {
+            const lastBotMessage = history
+              .filter((h: any) => h.message_type === "bot" &&
+                h.message_text && !h.metadata?.image_url)
+              .slice(0, 1)
+              .map((h: any) => (h.message_text || "").toLowerCase())
+              .join("");
+        
+            matchedProducts = products.filter((p: any) =>
+              lastBotMessage.includes(p.name.toLowerCase())
+            );
+          }
         
           // ပို့ပြီးသားပုံ ဖယ်မယ်
           const sentImageUrls = new Set(
@@ -721,7 +729,6 @@ ${productListForAI}`;
           );
           if (unsentProducts.length > 0) matchedProducts = unsentProducts;
         }
-
         if (matchedProducts.length === 1) {
           productToShow = matchedProducts[0];
           action = "show_product";

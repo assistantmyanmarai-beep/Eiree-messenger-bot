@@ -510,13 +510,10 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       await updateContext(customer.id, {
         preferences: { address: "", collecting_order: false, has_active_order: false, detected_gender: "", customer_name: "", gender_title: "" },
       });
-    
-      // Greeting ကို Training table ကနေ ဆွဲယူမယ်
-      const greetingConfig = await supabaseQuery("ai_training_config", "GET", null,
-        "system_prompt=eq.tone&is_active=eq.true&select=content&order=created_at.asc&limit=1"
-      );
-      const greeting = greetingConfig?.[0]?.content ||
-        "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
+      const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
+      await saveConversation(customer.id, "customer", messageText);
+      await saveConversation(customer.id, "bot", greeting);
+      return { reply: greeting, productToShow: null, productsToShow: [] };
     }
 
     const productListForAI = products.map((p: any) =>
@@ -558,10 +555,21 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
 ━━━ Customer ဆက်သွယ်ပုံ ━━━
-- ${addressRule}
-- Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
-- \\n escape sequence တွေ reply ထဲ မထည့်ရ။
-- Product ID တွေ ([ID:x]) ကို reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
+• ${addressRule}
+• "ရှင့်" "ခင်ဗျားရဲ့" ကဲ့သို့ ရိုင်းသော နာမ်စားများ လုံးဝမသုံးရ။
+• မိမိကိုယ်ကို "ကျွန်တော်" ဟုသာ ရည်ညွှန်းပါ။
+• သဘာဝကျကျ၊ နွေးထွေးစွာ ပရော်ဖက်ရှင်နယ်ဆန်ဆန် ပြောပါ။
+• Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
+• \\n escape sequence တွေ reply ထဲ မထည့်ရ။
+• Product ID တွေ ([ID:x]) ကို reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
+
+━━━ Conversation Style (Professional Sales Chat) ━━━
+• Messenger မှာ လူသားအရောင်းဝန်ထမ်းတစ်ယောက် chat လုပ်နေသလို သဘာဝကျကျ ပြောပါ။
+• Customer ရဲ့ မေးခွန်းပေါ်မူတည်ပြီး — တိုတိုဖြေရမယ့်အခါ တိုတို၊ ရှင်းပြရမယ့်အခါ ရှင်းပြ။
+• Technical information တွေ Customer မတောင်းဘဲ အကုန်တန်းမပေးနဲ့ — key point ပဲ ပြောပြီး Customer ထပ်မေးမှ ဆက်ရှင်းပြပါ။
+• Customer ရဲ့ situation မသိသေးရင် recommend မလုပ်ခင် မေးပါ — ချက်ချင်း product တွန်းမတိုက်နဲ့။
+• Reply တစ်ခုပြီးတိုင်း guiding question တစ်ခုနဲ့ ဆုံးပါ — conversation dead end မဖြစ်စေနဲ့။
+• Client instructions ထဲက knowledge ကို Customer မေးမှသာ သုံးပါ — မေးမချင်း အကုန်မပေးနဲ့။
 
 ━━━ Response Format ━━━
 အမြဲ JSON format နဲ့ respond ရမည်။ JSON key/value တွေ "reply" text ထဲ လုံးဝမပါရ။

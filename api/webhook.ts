@@ -474,6 +474,22 @@ async function sendMultipleProductImages(recipientId: string, productList: any[]
   }
 }
 
+// Buy keywords — multiple order detection အတွက် (၂ နေရာ share လုပ်မယ်)
+const BUY_KEYWORDS = [
+  "ယူမယ်", "ယူလိုက်မယ်", "ယူချင်တယ်",
+  "ဝယ်မယ်", "ဝယ်လိုက်မယ်", "ဝယ်ချင်တယ်",
+  "မှာမယ်", "မှာလိုက်မယ်", "မှာချင်တယ်",
+  "ထပ်ယူ", "ထပ်ဝယ်", "ထပ်မှာ",
+  "ပါယူ", "ပါဝယ်", "ပါမှာ",
+  "တစ်ခါတည်းယူ", "တစ်ခါတည်းဝယ်", "တစ်ခါတည်းမှာ",
+  "တွဲယူ", "တွဲဝယ်", "တွဲမှာ",
+  "နှစ်ခုလုံး", "သုံးခုလုံး", "အကုန်ယူ",
+  "order တင်", "order လုပ်",
+  "ဒါပါယူ", "အဲ့ဒါပါယူ", "ဒါလည်းယူ",
+  "လည်းယူ", "လည်းဝယ်", "လည်းမှာ",
+  "ကောယူ", "ကောဝယ်", "ကောမှာ",
+];
+
 async function generateAIResponse(psid: string, messageText: string): Promise<{
   reply: string;
   productToShow: any | null;
@@ -494,6 +510,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 
     const prefs = parsePreferences(context?.preferences);
 
+    // ── Gender detect from speech pattern ──
     if (!prefs.detected_gender) {
       const speechGender = detectGenderFromSpeechPattern(messageText);
       if (speechGender) {
@@ -506,6 +523,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       }
     }
 
+    // ── First-time greeting ──
     if (!context?.preferences && history.length === 0) {
       await updateContext(customer.id, {
         preferences: { address: "", collecting_order: false, has_active_order: false, detected_gender: "", customer_name: "", gender_title: "" },
@@ -540,18 +558,18 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
     const orderContext = prefs.collecting_order
       ? `\n\n⚠️ လက်ရှိ အော်ဒါ ကောက်နေဆဲ (Product: ${prefs.pending_product || "မသေချာသေး"})။` : "";
 
-      const activeOrderWarning = prefs.has_active_order
+    const activeOrderWarning = prefs.has_active_order
       ? `\n\n🔒 CRITICAL — has_active_order=TRUE:
-    - action="save_order" လုံးဝမသုံးရ
-    - action="start_order" လုံးဝမသုံးရ
-    - Customer ကို ဈေးနှုန်းပေါင်းပြောနိုင်သည် — သဘာဝကျကျ ဆက်စကားပြောပါ
-    - "အော်ဒါအတည်ပြုပေးပါ့မယ်ခင်ဗျာ" ဆိုသောစကားမျိုးနဲ့ Customer ကို အသိပေးပါ
-    - Customer Service Team၊ Dashboard၊ Manual Order ဆိုသောစကား Customer ကို လုံးဝမပြောရ
-    - နောက်ထပ် product မှာချင်ရင် → action="notify_owner" ချက်ချင်းသုံးရမည်` : "";
+• action="save_order" လုံးဝမသုံးရ
+• action="start_order" လုံးဝမသုံးရ
+• Customer ကို ဈေးနှုန်းပေါင်းပြောနိုင်သည် — သဘာဝကျကျ ဆက်စကားပြောပါ
+• "အော်ဒါအတည်ပြုပေးပါ့မယ်ခင်ဗျာ" ဆိုသောစကားမျိုးနဲ့ Customer ကို အသိပေးပါ
+• Customer Service Team၊ Dashboard၊ Manual Order ဆိုသောစကား Customer ကို လုံးဝမပြောရ
+• နောက်ထပ် product မှာချင်ရင် → action="notify_owner" ချက်ချင်းသုံးရမည်` : "";
 
     const trainingSection = trainingInstructions
-  ? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${trainingInstructions}` : "";
-  
+      ? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${trainingInstructions}` : "";
+
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
 ━━━ Customer ဆက်သွယ်ပုံ ━━━
@@ -587,34 +605,27 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 - "none" — ပုံမှန် conversation
 - "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
   ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
-  ⚠️ Customer က ပုံကောင်းတယ်၊ လှတယ်၊ ကြည့်ရတာကောင်းတယ် စသည်ဖြင့် ချီးမွမ်းနေရင် ပုံထပ်မပို့ရ — show_product မသုံးရ
-- "show_product" — Customer က product တစ်ခုတည်း ပုံကြည့်ချင်သောအခါ (product_id ထည့်ပါ)
-  ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က အလိုအလျောက် ပုံပို့မည်
+  ⚠️ Customer က ပုံကောင်းတယ်၊ လှတယ် ဆိုရင် show_product မသုံးရ
   ⚠️ Customer က ပုံကြည့်ချင်တယ်ဆိုရင် action=none မသုံးရ — show_product သာသုံးရမည်
-  ⚠️ Customer က ချီးမွမ်းနေရင်သာ show_product မသုံးရ
-
-- "show_products" — Customer က product နှစ်ခုနဲ့အထက် (သို့) အားလုံး ပုံကြည့်ချင်သောအခါ
-  ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ — system က တစ်ခုချင်းစီ ပုံပို့မည်
-  ⚠️ "ကျန်တဲ့ပုံ"၊ "အကုန်ပြပေး"၊ "အားလုံးပြပေး" ဆိုရင် conversation မှာ ပြောဖူးတဲ့ product အကုန် product_ids ထဲ ထည့်ပြီး show_products သုံးရမည်
-  ⚠️ action=none နဲ့ reply မှာ "ပုံပို့မယ်" လို့ ပြောခြင်း လုံးဝမလုပ်ရ — show_products သာသုံးရမည်
+- "show_products" — Customer က product နှစ်ခုနဲ့အထက် ပုံကြည့်ချင်သောအခါ
+  ⚠️ reply ထဲ ပုံပို့မည် hint မထည့်ရ
+  ⚠️ "ကျန်တဲ့ပုံ"၊ "အကုန်ပြပေး" ဆိုရင် conversation မှာ ပြောဖူးတဲ့ product အကုန် product_ids ထဲ ထည့်ပြီး show_products သုံးရမည်
+  ⚠️ action=none နဲ့ reply မှာ "ပုံပို့မယ်" လို့ ပြောခြင်း လုံးဝမလုပ်ရ
 - "start_order" — Customer က ဝယ်မည်ဆိုပြီး info မပေးသေးသောအခါ
-  ⚠️ name/phone/address တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
-  ⚠️ order_data ထဲမှာ product_id ကို Products list ထဲက ID number တိတိကျကျ ထည့်ရမည်
-  ⚠️ product_id မသေချာရင်လည်း product_name တိတိကျကျ ထည့်ပြီး null မထားရ
-  ⚠️ has_active_order=true ဖြစ်နေရင် start_order မသုံးရ — notify_owner သာသုံးရမည်
+  ⚠️ name/phone/address သုံးခုလုံး တောင်းမည့် reply ထုတ်တိုင်း start_order ပါ တစ်ပါတည်းထွက်ရမည်
+  ⚠️ order_data ထဲမှာ product_id တိတိကျကျ ထည့်ရမည်
+  ⚠️ has_active_order=true ဖြစ်နေရင် start_order မသုံးရ
   ဥပမာ — order_data: { "product_id": 2, "product_name": "6 Stage UF Drinking Water Purifier (ABS)" }
 - "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
   ⚠️ collected_data ထဲ phone မှာ မြန်မာဂဏန်းပါရင် 09... အဖြစ် ပြောင်းပြီး ထည့်ပေးပါ
 - "notify_owner" — အောက်ပါ ၂ မျိုးသာ သုံးရမည် —
-
-  REASON 1: inquiry — AI မဖြေနိုင်သော မေးခွန်း၊ delivery date၊ တိတိကျကျ မသိသောဈေးနှုန်း
+  REASON 1: inquiry — AI မဖြေနိုင်သော မေးခွန်း၊ delivery date
   → order_data: { "reason": "inquiry" }
-
-  REASON 2: multiple_order — has_active_order=true ဖြစ်နေပြီး Customer က တိတိကျကျ နောက်ထပ် product ထပ်ဝယ်မည်ဟု ပြောသောအခါ
-  → Customer message မှာ "ယူမယ်/ဝယ်မယ်/မှာမယ်/ထပ်ယူ/ပါယူ/နှစ်ခုလုံး/တစ်ခါတည်းပါ" keyword တိတိကျကျ ပါမှသာ သုံးရမည်
-  → order_data: { "reason": "multiple_order", "product_name": "product နာမည်တိတိကျကျ" }
-  → has_active_order=true မဟုတ်ရင် multiple_order မသုံးရ
+  REASON 2: multiple_order — has_active_order=true + Customer ထပ်မှာချင်သောအခါ
+  → Customer message မှာ ဝယ်မယ် keyword ပါမှသာ သုံးရမည်
+  → order_data: { "reason": "multiple_order", "product_name": "product နာမည်" }
+  ⚠️ has_active_order=true မဟုတ်ရင် multiple_order မသုံးရ
 
 ━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
@@ -685,7 +696,8 @@ ${productListForAI}`;
         .filter(Boolean);
     }
 
-    // ── POST-AI SMART IMAGE SAFETY NET ──
+    // ── IMAGE SAFETY NET ──
+    // AI က show_product/show_products action မထုတ်ဘဲ ပုံတောင်းတဲ့ Customer ကို handle မယ်
     if (action === "none" && productToShow === null && productsToShow.length === 0) {
       const imageKeywords = ["ပုံ", "photo", "ဓာတ်ပုံ", "ပြပေး", "ကြည့်ချင်", "မြင်ချင်", "show", "image", "ပုံလေး", "ပုံပြ", "ကြည့်ပါ", "ပြပါ"];
       const isAskingForImage = imageKeywords.some(k => messageText.toLowerCase().includes(k.toLowerCase()));
@@ -693,42 +705,40 @@ ${productListForAI}`;
       if (isAskingForImage) {
         const currentText = messageText.toLowerCase();
 
+        // Step 1: Current message မှာ product name ပါသလား စစ်
         let matchedProducts = products.filter((p: any) =>
           currentText.includes(p.name.toLowerCase())
         );
 
+        // Step 2: မပါရင် AI ရဲ့ current reply ထဲမှာ ရှာ
         if (matchedProducts.length === 0) {
-          // AI current reply ကို အရင်စစ်မယ်
           const currentReplyLower = safeReply.toLowerCase();
           matchedProducts = products.filter((p: any) =>
             currentReplyLower.includes(p.name.toLowerCase())
           );
-        
-          // current reply မှာ မတွေ့ရင် lastBotMessage ကြည့်
-          if (matchedProducts.length === 0) {
-            const lastBotMessage = history
-              .filter((h: any) => h.message_type === "bot" &&
-                h.message_text && !h.metadata?.image_url)
-              .slice(0, 1)
-              .map((h: any) => (h.message_text || "").toLowerCase())
-              .join("");
-        
-            matchedProducts = products.filter((p: any) =>
-              lastBotMessage.includes(p.name.toLowerCase())
-            );
-          }
-        
-          // ပို့ပြီးသားပုံ ဖယ်မယ်
-          const sentImageUrls = new Set(
-            history
-              .filter((h: any) => h.message_type === "bot" && h.metadata?.image_url)
-              .map((h: any) => h.metadata.image_url)
-          );
-          const unsentProducts = matchedProducts.filter((p: any) =>
-            !sentImageUrls.has(p.image_url)
-          );
-          if (unsentProducts.length > 0) matchedProducts = unsentProducts;
         }
+
+        // Step 3: မတွေ့ရင် bot ရဲ့ နောက်ဆုံး text message ထဲမှာ ရှာ
+        if (matchedProducts.length === 0) {
+          const lastBotMessage = history
+            .filter((h: any) => h.message_type === "bot" && h.message_text && !h.metadata?.image_url)
+            .slice(0, 1)
+            .map((h: any) => (h.message_text || "").toLowerCase())
+            .join("");
+          matchedProducts = products.filter((p: any) =>
+            lastBotMessage.includes(p.name.toLowerCase())
+          );
+        }
+
+        // Step 4: ပို့ပြီးသားပုံ ဖယ်မယ်
+        const sentImageUrls = new Set(
+          history
+            .filter((h: any) => h.message_type === "bot" && h.metadata?.image_url)
+            .map((h: any) => h.metadata.image_url)
+        );
+        const unsentProducts = matchedProducts.filter((p: any) => !sentImageUrls.has(p.image_url));
+        if (unsentProducts.length > 0) matchedProducts = unsentProducts;
+
         if (matchedProducts.length === 1) {
           productToShow = matchedProducts[0];
           action = "show_product";
@@ -738,6 +748,26 @@ ${productListForAI}`;
           action = "show_products";
           console.log(`[IMAGE SAFETY NET] Multiple products: ${matchedProducts.map((p: any) => p.name).join(", ")}`);
         }
+      }
+    }
+
+    // ── MULTIPLE ORDER SAFETY NET ──
+    // AI က has_active_order=true အချိန် notify_owner မထုတ်ရင် code ကနေ trigger လုပ်မယ်
+    // ⚠️ NOTIFY OWNER handler အပေါ်မှာ ရှိရမည် — handler ထဲ ရောက်မှ action ပြောင်းနိုင်ရန်
+    if (action === "none" && prefs.has_active_order) {
+      const msgLower = messageText.toLowerCase();
+      const hasBuyIntent = BUY_KEYWORDS.some(k => msgLower.includes(k));
+      if (hasBuyIntent) {
+        action = "notify_owner";
+        const replyLower = safeReply.toLowerCase();
+        const mentionedProduct = products.find((p: any) => replyLower.includes(p.name.toLowerCase()));
+        if (!aiResponse.order_data) {
+          aiResponse.order_data = {
+            reason: "multiple_order",
+            product_name: mentionedProduct?.name || "",
+          };
+        }
+        console.log(`[MULTIPLE ORDER SAFETY NET] Buy intent detected: ${messageText}`);
       }
     }
 
@@ -778,7 +808,6 @@ ${productListForAI}`;
             p.name === prefs.pending_product || p.name.toLowerCase().includes((prefs.pending_product || "").toLowerCase())
           ) : null) ||
           (aiResponse.order_data?.product_id ? products.find((p: any) => p.id === aiResponse.order_data.product_id) : null) || null;
-
         if (product) {
           console.log(`[AI PATH] Saving order for customer ${customer.id}`);
           await processSaveOrder(customer.id, psid, name, normalizedPhone, address, quantity || 1, product, prefs);
@@ -811,9 +840,8 @@ ${productListForAI}`;
     if (action === "notify_owner") {
       const reason = aiResponse.order_data?.reason || "inquiry";
       const msgLower = messageText.toLowerCase();
-      const buyKeywords = ["ယူမယ်","ယူလိုက်မယ်","ယူချင်တယ်","ဝယ်မယ်","ဝယ်လိုက်မယ်","ဝယ်ချင်တယ်","မှာမယ်","မှာလိုက်မယ်","မှာချင်တယ်","ထပ်ယူ","ထပ်ဝယ်","ထပ်မှာ","ပါယူ","ပါဝယ်","ပါမှာ","တစ်ခါတည်းယူ","တစ်ခါတည်းဝယ်","တစ်ခါတည်းမှာ","တွဲယူ","တွဲဝယ်","တွဲမှာ","နှစ်ခုလုံး","သုံးခုလုံး","အကုန်ယူ","order တင်","order လုပ်","ဒါပါယူ","အဲ့ဒါပါယူ","ဒါလည်းယူ","လည်းယူ","လည်းဝယ်","လည်းမှာ","ကောယူ","ကောဝယ်","ကောမှာ"];
-      const hasBuyIntent = buyKeywords.some(k => msgLower.includes(k));
-    
+      const hasBuyIntent = BUY_KEYWORDS.some(k => msgLower.includes(k));
+
       if (reason === "multiple_order" && prefs.has_active_order && hasBuyIntent) {
         const existingOrder = await supabaseQuery("orders", "GET", null,
           `customer_id=eq.${customer.id}&order=created_at.desc&limit=1&select=full_name,phone_number,delivery_address`
@@ -845,45 +873,30 @@ ${productListForAI}`;
         );
       }
     }
-// ── MULTIPLE ORDER CODE-LEVEL SAFETY NET ──
-// AI က has_active_order=true အချိန် notify_owner မထုတ်ရင်
-// buy keyword စစ်ပြီး code ကနေ notify_owner trigger လုပ်မယ်
-if (action === "none" && prefs.has_active_order) {
-  const msgLower = messageText.toLowerCase();
-  const buyKeywords = [
-    "ယူမယ်", "ယူလိုက်မယ်", "ယူချင်တယ်",
-    "ဝယ်မယ်", "ဝယ်လိုက်မယ်", "ဝယ်ချင်တယ်",
-    "မှာမယ်", "မှာလိုက်မယ်", "မှာချင်တယ်",
-    "ထပ်ယူ", "ထပ်ဝယ်", "ထပ်မှာ",
-    "ပါယူ", "ပါဝယ်", "ပါမှာ",
-    "တစ်ခါတည်းယူ", "တစ်ခါတည်းဝယ်", "တစ်ခါတည်းမှာ",
-    "တွဲယူ", "တွဲဝယ်", "တွဲမှာ",
-    "နှစ်ခုလုံး", "သုံးခုလုံး", "အကုန်ယူ",
-    "order တင်", "order လုပ်",
-    "ဒါပါယူ", "အဲ့ဒါပါယူ", "ဒါလည်းယူ",
-    "လည်းယူ", "လည်းဝယ်", "လည်းမှာ",
-    "ကောယူ", "ကောဝယ်", "ကောမှာ"
-  ];
-  const hasBuyIntent = buyKeywords.some(k => msgLower.includes(k));
 
-  if (hasBuyIntent) {
-    action = "notify_owner";
-    // AI reply ထဲမှာ product name ရှာမယ်
-    const replyLower = safeReply.toLowerCase();
-    const mentionedProduct = products.find((p: any) =>
-      replyLower.includes(p.name.toLowerCase())
-    );
-    if (mentionedProduct && !aiResponse.order_data) {
-      aiResponse.order_data = {
-        reason: "multiple_order",
-        product_name: mentionedProduct.name
-      };
-    } else if (!aiResponse.order_data) {
-      aiResponse.order_data = { reason: "multiple_order", product_name: "" };
+    // ── CONFIRM ORDER SAFETY NET ──
+    // Customer က confirm ပြောလိုက်တဲ့အချိန် AI က save_order မထုတ်ရင်
+    // bot ရဲ့ နောက်ဆုံး message ထဲမှာ name/phone/address ရှာပြီး order save မယ်
+    if (action === "none" && prefs.collecting_order && !prefs.has_active_order) {
+      const confirmKeywords = ["ဟုတ်ကဲ့", "မှန်ပါတယ်", "မှန်တယ်", "အဆင်ပြေတယ်",
+        "ကောင်းပြီ", "ok", "okay", "yes", "ရပါတယ်", "ရတယ်"];
+      const isConfirming = confirmKeywords.some(k => messageText.toLowerCase().includes(k.toLowerCase()));
+
+      if (isConfirming && prefs.pending_product_id) {
+        const product = products.find((p: any) => p.id === prefs.pending_product_id);
+        const lastBotMsg = history
+          .filter((h: any) => h.message_type === "bot" && h.message_text && !h.metadata?.image_url)
+          .slice(0, 1)[0];
+        if (lastBotMsg && product) {
+          const extracted = extractOrderDataFromMessage(lastBotMsg.message_text);
+          if (extracted.name && extracted.phone && extracted.address) {
+            console.log(`[CONFIRM SAFETY NET] Saving order for customer ${customer.id}`);
+            await processSaveOrder(customer.id, psid, extracted.name, extracted.phone,
+              extracted.address, 1, product, prefs);
+          }
+        }
+      }
     }
-    console.log(`[MULTIPLE ORDER SAFETY NET] Buy intent detected: ${messageText}`);
-  }
-}
 
     // ── CODE-LEVEL START ORDER SAFETY NET ──
     // AI က start_order action မထုတ်ဘဲ name/phone/address တောင်းရင်
@@ -893,9 +906,7 @@ if (action === "none" && prefs.has_active_order) {
         (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));
       if (askingForInfo) {
         const replyLower = safeReply.toLowerCase();
-        const matchedProduct = products.find((p: any) =>
-          replyLower.includes(p.name.toLowerCase())
-        );
+        const matchedProduct = products.find((p: any) => replyLower.includes(p.name.toLowerCase()));
         if (matchedProduct) {
           await updateContext(customer.id, {
             preferences: {
@@ -903,7 +914,7 @@ if (action === "none" && prefs.has_active_order) {
               collecting_order: true,
               pending_product: matchedProduct.name,
               pending_product_id: matchedProduct.id,
-              has_active_order: false
+              has_active_order: false,
             },
           });
           console.log(`[SAFETY NET] Product found in reply: ${matchedProduct.name} (ID: ${matchedProduct.id})`);
@@ -971,7 +982,6 @@ async function handleOrderCancel(body: any): Promise<void> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");

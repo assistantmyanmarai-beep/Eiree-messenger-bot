@@ -705,51 +705,53 @@ ${productListForAI}`;
       if (isAskingForImage) {
         const currentText = messageText.toLowerCase();
 
-        // Step 1: Current message မှာ product name ပါသလား စစ်
-        let matchedProducts = products.filter((p: any) =>
-          currentText.includes(p.name.toLowerCase())
-        );
+       // Step 1: Current message မှာ product name ပါသလား စစ်
+let matchedProducts = products.filter((p: any) =>
+  currentText.includes(p.name.toLowerCase())
+);
 
-        // Step 2: မပါရင် AI ရဲ့ current reply ထဲမှာ ရှာ
-        if (matchedProducts.length === 0) {
-          const currentReplyLower = safeReply.toLowerCase();
-          matchedProducts = products.filter((p: any) =>
-            currentReplyLower.includes(p.name.toLowerCase())
-          );
-        }
+// Step 2: မပါရင် AI ရဲ့ current reply ထဲမှာ ရှာ
+if (matchedProducts.length === 0) {
+  const currentReplyLower = safeReply.toLowerCase();
+  matchedProducts = products.filter((p: any) =>
+    currentReplyLower.includes(p.name.toLowerCase())
+  );
+}
 
-        // Step 3: မတွေ့ရင် bot ရဲ့ နောက်ဆုံး text message ထဲမှာ ရှာ
-        if (matchedProducts.length === 0) {
-          const lastBotMessage = history
-            .filter((h: any) => h.message_type === "bot" && h.message_text && !h.metadata?.image_url)
-            .slice(0, 1)
-            .map((h: any) => (h.message_text || "").toLowerCase())
-            .join("");
-          matchedProducts = products.filter((p: any) =>
-            lastBotMessage.includes(p.name.toLowerCase())
-          );
-        }
+// Step 3: မတွေ့ရင် bot ရဲ့ နောက်ဆုံး text message ထဲမှာ ရှာ (partial match ပါ)
+if (matchedProducts.length === 0) {
+  const lastBotMessage = history
+    .filter((h: any) => h.message_type === "bot" && h.message_text && !h.metadata?.image_url)
+    .slice(0, 1)
+    .map((h: any) => (h.message_text || "").toLowerCase())
+    .join("");
 
-        // Step 4: ပို့ပြီးသားပုံ ဖယ်မယ်
-        const sentImageUrls = new Set(
-          history
-            .filter((h: any) => h.message_type === "bot" && h.metadata?.image_url)
-            .map((h: any) => h.metadata.image_url)
-        );
-        const unsentProducts = matchedProducts.filter((p: any) => !sentImageUrls.has(p.image_url));
-        if (unsentProducts.length > 0) matchedProducts = unsentProducts;
+  matchedProducts = products.filter((p: any) => {
+    if (lastBotMessage.includes(p.name.toLowerCase())) return true;
+    const pWords = p.name.toLowerCase().split(" ")
+      .filter((w: string) => w.length > 3);
+    return pWords.some((word: string) => lastBotMessage.includes(word));
+  });
+}
 
-        if (matchedProducts.length === 1) {
-          productToShow = matchedProducts[0];
-          action = "show_product";
-          console.log(`[IMAGE SAFETY NET] Single product: ${matchedProducts[0].name}`);
-        } else if (matchedProducts.length > 1) {
-          productsToShow = matchedProducts;
-          action = "show_products";
-          console.log(`[IMAGE SAFETY NET] Multiple products: ${matchedProducts.map((p: any) => p.name).join(", ")}`);
-        }
-      }
-    }
+// Step 4: ပို့ပြီးသားပုံ ဖယ်မယ်
+const sentImageUrls = new Set(
+  history
+    .filter((h: any) => h.message_type === "bot" && h.metadata?.image_url)
+    .map((h: any) => h.metadata.image_url)
+);
+const unsentProducts = matchedProducts.filter((p: any) => !sentImageUrls.has(p.image_url));
+if (unsentProducts.length > 0) matchedProducts = unsentProducts;
+
+if (matchedProducts.length === 1) {
+  productToShow = matchedProducts[0];
+  action = "show_product";
+  console.log(`[IMAGE SAFETY NET] Single product: ${matchedProducts[0].name}`);
+} else if (matchedProducts.length > 1) {
+  productsToShow = matchedProducts;
+  action = "show_products";
+  console.log(`[IMAGE SAFETY NET] Multiple products: ${matchedProducts.map((p: any) => p.name).join(", ")}`);
+}
 
     // ── MULTIPLE ORDER SAFETY NET ──
     // AI က has_active_order=true အချိန် notify_owner မထုတ်ရင် code ကနေ trigger လုပ်မယ်

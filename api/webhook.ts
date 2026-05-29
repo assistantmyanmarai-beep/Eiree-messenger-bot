@@ -353,28 +353,49 @@ function parsePreferences(preferences: any) {
   } catch { return defaults; }
 }
 
-async function getActiveTrainingInstructions(): Promise<string> {
+async function getActiveTrainingInstructions(): Promise<{
+  rules: string;
+  greeting: string;
+}> {
   try {
     const configs = await supabaseQuery("ai_training_config", "GET", null,
       "is_active=eq.true&select=system_prompt,content&order=created_at.asc");
-    if (!configs || configs.length === 0) return "";
-    const rules = configs
+    if (!configs || configs.length === 0) return { rules: "", greeting: "" };
+
+    const toneRules = configs
       .filter((c: any) => c.system_prompt === "tone")
       .map((c: any) => c.content || "")
       .filter((text: string) => text.trim().length > 0)
       .join("\n• ");
-    const knowledge = configs
-      .filter((c: any) => c.system_prompt !== "tone")
+
+    const criticalRules = configs
+      .filter((c: any) => c.system_prompt === "rule")
       .map((c: any) => c.content || "")
       .filter((text: string) => text.trim().length > 0)
       .join("\n• ");
+
+    const greeting = configs
+      .filter((c: any) => c.system_prompt === "greeting")
+      .map((c: any) => c.content || "")
+      .filter((text: string) => text.trim().length > 0)
+      .join("\n");
+
+    const knowledge = configs
+      .filter((c: any) => c.system_prompt === "knowledge")
+      .map((c: any) => c.content || "")
+      .filter((text: string) => text.trim().length > 0)
+      .join("\n• ");
+
     let result = "";
-    if (rules) result += `━━━ Tone & Style Rules (အမြဲလိုက်နာရမည်) ━━━\n• ${rules}`;
-    if (knowledge) result += `\n\n━━━ Knowledge Base (Customer မေးမှသာ သုံးပါ — context နဲ့ကိုက်ညီမှ ထုတ်သုံးပါ) ━━━\n• ${knowledge}`;
-    return result;
+    if (toneRules) result += `━━━ Tone & Style Rules (အမြဲလိုက်နာရမည်) ━━━\n• ${toneRules}`;
+    if (criticalRules) result += `\n\n━━━ Critical Rules (အမြဲလိုက်နာရမည်) ━━━\n• ${criticalRules}`;
+    if (knowledge) result += `\n\n━━━ Knowledge Base (Customer မေးမှသာ သုံးပါ) ━━━\n• ${knowledge}`;
+
+    return { rules: result, greeting };
+
   } catch (e: any) {
     console.error("getActiveTrainingInstructions error:", e.message);
-    return "";
+    return { rules: "", greeting: "" };
   }
 }
 
@@ -501,7 +522,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
     const customer = await getOrCreateCustomer(psid);
     if (!customer?.id) return { reply: fallback, productToShow: null, productsToShow: [] };
 
-    const [history, products, context, trainingInstructions] = await Promise.all([
+    const [history, products, context, training] = await Promise.all([
       getConversationHistory(customer.id, 20),
       getProducts(),
       getContext(customer.id),
@@ -528,7 +549,8 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       await updateContext(customer.id, {
         preferences: { address: "", collecting_order: false, has_active_order: false, detected_gender: "", customer_name: "", gender_title: "" },
       });
-      const greeting = "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
+      const greeting = training.greeting ||
+        "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
       await saveConversation(customer.id, "customer", messageText);
       await saveConversation(customer.id, "bot", greeting);
       return { reply: greeting, productToShow: null, productsToShow: [] };
@@ -567,8 +589,9 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • Customer Service Team၊ Dashboard၊ Manual Order ဆိုသောစကား Customer ကို လုံးဝမပြောရ
 • နောက်ထပ် product မှာချင်ရင် → action="notify_owner" ချက်ချင်းသုံးရမည်` : "";
 
-    const trainingSection = trainingInstructions
-      ? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${trainingInstructions}` : "";
+const trainingSection = training.rules
+? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${training.rules}` : "";
+
 
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
@@ -580,14 +603,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
 • \\n escape sequence တွေ reply ထဲ မထည့်ရ။
 • Product ID တွေ ([ID:x]) ကို reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
-
-━━━ Conversation Style (Professional Sales Chat) ━━━
-• Messenger မှာ လူသားအရောင်းဝန်ထမ်းတစ်ယောက် chat လုပ်နေသလို သဘာဝကျကျ ပြောပါ။
-• Customer ရဲ့ မေးခွန်းပေါ်မူတည်ပြီး — တိုတိုဖြေရမယ့်အခါ တိုတို၊ ရှင်းပြရမယ့်အခါ ရှင်းပြ။
-• Technical information တွေ Customer မတောင်းဘဲ အကုန်တန်းမပေးနဲ့ — key point ပဲ ပြောပြီး Customer ထပ်မေးမှ ဆက်ရှင်းပြပါ။
-• Customer ရဲ့ situation မသိသေးရင် recommend မလုပ်ခင် မေးပါ — ချက်ချင်း product တွန်းမတိုက်နဲ့။
-• Reply တစ်ခုပြီးတိုင်း guiding question တစ်ခုနဲ့ ဆုံးပါ — conversation dead end မဖြစ်စေနဲ့။
-• Client instructions ထဲက knowledge ကို Customer မေးမှသာ သုံးပါ — မေးမချင်း အကုန်မပေးနဲ့။
+- Customer ဘာသာစကားမည်သို့ပင်ရေးစေကာမူ မြန်မာဘာသာဖြင့်သာ ပြန်ဆိုပါ။ တရုတ်၊ ထိုင်း၊ ကိုရီးယား၊ ဂျပန် စသည့် နိုင်ငံခြားဘာသာစကားများ reply ထဲ လုံးဝမထည့်ရ။
 
 ━━━ Response Format ━━━
 အမြဲ JSON format နဲ့ respond ရမည်။ JSON key/value တွေ "reply" text ထဲ လုံးဝမပါရ။

@@ -12,12 +12,19 @@
     },
     "api/cron/check-filters.ts": {
       "maxDuration": 60
+    },
+    "api/cron/ping.ts": {
+      "maxDuration": 5
     }
   },
   "crons": [
     {
       "path": "/api/cron/check-filters",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/ping",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

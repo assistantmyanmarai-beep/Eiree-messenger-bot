@@ -551,9 +551,18 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
       });
       const greeting = training.greeting ||
         "မင်္ဂလာပါခင်ဗျာ 😊 EIREE MYANMAR မှ နွေးထွေးစွာ ကြိုဆိုပါတယ်ခင်ဗျာ။\n\nအိမ်သုံးရေသန့်စက်လေးတွေ ရှာနေတာလားခင်ဗျာ? ကျွန်တော်တို့ဆီမှာ သောက်ရေသီးသန့်အတွက်ရော၊ တစ်အိမ်လုံးအတွက်ပါ ရေသန့်စက်အမျိုးမျိုး ရှိပါတယ်ခင်ဗျာ။ ဘာများ ကူညီပေးရမလဲခင်ဗျာ? 🙏";
-      await saveConversation(customer.id, "customer", messageText);
-      await saveConversation(customer.id, "bot", greeting);
-      return { reply: greeting, productToShow: null, productsToShow: [] };
+
+      const greetingKeywords = ["hi", "hello", "မင်္ဂလာ", "မင်္ဂလာပါ", "ဟဲလို", "hey", "ဟိုင်း"];
+      const isGreetingOnly = greetingKeywords.some(k =>
+        messageText.toLowerCase().trim() === k.toLowerCase()
+      ) || messageText.trim().length <= 3;
+
+      if (isGreetingOnly) {
+        await saveConversation(customer.id, "customer", messageText);
+        await saveConversation(customer.id, "bot", greeting);
+        return { reply: greeting, productToShow: null, productsToShow: [] };
+      }
+      // တစ်ခြားမေးခွန်းဆိုရင် → AI ဆီ တန်းဆင်းသွား
     }
 
     const productListForAI = products.map((p: any) =>

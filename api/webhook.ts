@@ -655,10 +655,17 @@ const trainingSection = training.rules
 ━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
 
-━━━ ဈေးနှုန်း Rules ━━━
-⚠️ Product list ထဲကဟာကိုသာ ပြောပါ။ Product ID ကို Customer ဆီ မပြောရ။
-⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner"
+━━━ ဈေးနှုန်း Rules (CRITICAL) ━━━
+⚠️ STRICT RULE: ဈေးနှုန်းတိုင်းကို အောက်က Products list ထဲက တန်ဖိုးကိုသာ သုံးရမည်။
+⚠️ Conversation history ထဲမှာ ဈေးနှုန်းတွေ ပါနေသော်လည်း အဟောင်းဖြစ်နိုင်သောကြောင့် လုံးဝမကိုးကားရ — history ဈေးနှုန်းထက် Products list ကို အမြဲဦးစားပေးရမည်။
+⚠️ Product ID ([ID:x]) ကို Customer ဆီ လုံးဝမပြောရ။
+⚠️ မသေချာသော ဈေးနှုန်း → action: "notify_owner" သာသုံးရမည်။
 ⚠️ Stock အကြောင်း လုံးဝမပြောရ။
+
+━━━ Stock & Preorder Rules ━━━
+⚠️ stock_quantity > 0 → ပုံမှန် start_order → save_order ကောက်ပါ။
+⚠️ stock_quantity = 0 → Pre-order အနေနဲ့ မှာယူနိုင်ကြောင်း Customer ကို ရှင်းပြပြီး start_order → save_order ကောက်ပါ။ စောင့်ရမည့်အချိန်နဲ့ပတ်သက်ပြီး မသေချာရင် notify_owner သုံးပါ။
+⚠️ Stock မရှိဘူးဆိုပြီး order မကောက်ဘဲ ရပ်မသွားရ။
 
 ━━━ Products (internal reference only) ━━━
 ${productListForAI}`;

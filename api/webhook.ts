@@ -566,7 +566,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
     }
 
     const productListForAI = products.map((p: any) =>
-      `• [ID:${p.id}] ${p.name} | ${Number(p.price_mmk).toLocaleString()} MMK` +
+      `• [ID:${p.id}] ${p.name} | လက်ရှိတိကျသောဈေးနှုန်း: ${Number(p.price_mmk).toLocaleString()} MMK` +
       (p.description ? ` | ${p.description}` : "") +
       (p.filter_stages ? ` | Filter: ${p.filter_stages}` : "") +
       (p.filter_precision ? ` | ${p.filter_precision}` : "")
@@ -599,7 +599,7 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • နောက်ထပ် product မှာချင်ရင် → action="notify_owner" ချက်ချင်းသုံးရမည်` : "";
 
 const trainingSection = training.rules
-? `\n━━━ Client ညွှန်ကြားချက်များ ━━━\n${training.rules}` : "";
+  ? `\n━━━ INTERNAL INSTRUCTIONS — Customer ဆီ reply ထဲ လုံးဝမထည့်ရ ━━━\n${training.rules}` : "";
 
 
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။

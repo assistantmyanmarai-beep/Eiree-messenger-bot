@@ -481,17 +481,17 @@ async function sendMultipleProductImages(recipientId: string, productList: any[]
   if (!MEDIA_ENABLED || !productList?.length) return;
   for (const product of productList) {
     await sendMessage(recipientId, `${product.name}\n${Number(product.price_mmk).toLocaleString()} ကျပ်`);
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise(resolve => setTimeout(resolve, 200));
     if (product.image_url) {
       await sendImageMessage(recipientId, product.image_url);
       if (customerId) await saveConversation(customerId, "bot", product.image_url, { image_url: product.image_url });
     }
     if (product.image_url2) {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 300));
       await sendImageMessage(recipientId, product.image_url2);
       if (customerId) await saveConversation(customerId, "bot", product.image_url2, { image_url: product.image_url2 });
     }
-    await new Promise(resolve => setTimeout(resolve, 800));
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
 }
 

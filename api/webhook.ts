@@ -941,7 +941,7 @@ ${productListForAI}`;
             );
             console.log(`[WHOLESALE] Updated social_link for order ${existingId}`);
           }
-        } else {
+        } else if (shopPhone) {
           // မရှိသေးဘူး → INSERT အသစ် + Telegram ပို့
           await supabaseQuery("orders", "POST", {
             customer_id: customer.id,

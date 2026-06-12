@@ -801,7 +801,7 @@ ${productListForAI}`;
     if (action === "none") {
       const msgLower = messageText.toLowerCase();
       const hasWholesaleIntent = WHOLESALE_KEYWORDS.some(k => msgLower.includes(k));
-      if (hasWholesaleIntent) {
+      if (hasWholesaleIntent && aiResponse.action !== "notify_owner") {
         action = "notify_owner";
         if (!aiResponse.order_data) {
           aiResponse.order_data = { reason: "wholesale", shop_name: "", phone: "", address: "", social: "" };

@@ -495,7 +495,6 @@ async function sendMultipleProductImages(recipientId: string, productList: any[]
   }
 }
 
-// Buy keywords — multiple order detection အတွက် (၂ နေရာ share လုပ်မယ်)
 const BUY_KEYWORDS = [
   "ယူမယ်", "ယူလိုက်မယ်", "ယူချင်တယ်",
   "ဝယ်မယ်", "ဝယ်လိုက်မယ်", "ဝယ်ချင်တယ်",
@@ -509,6 +508,11 @@ const BUY_KEYWORDS = [
   "ဒါပါယူ", "အဲ့ဒါပါယူ", "ဒါလည်းယူ",
   "လည်းယူ", "လည်းဝယ်", "လည်းမှာ",
   "ကောယူ", "ကောဝယ်", "ကောမှာ",
+];
+
+const WHOLESALE_KEYWORDS = [
+  "လက်ကား", "wholesale", "ပြန်ရောင်း", "ဆိုင်ဖွင့်",
+  "တစ်ဆိုင်လုံး", "bulk", "reseller", "ရောင်းချ",
 ];
 
 async function generateAIResponse(psid: string, messageText: string): Promise<{
@@ -562,7 +566,6 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
         await saveConversation(customer.id, "bot", greeting);
         return { reply: greeting, productToShow: null, productsToShow: [] };
       }
-      // တစ်ခြားမေးခွန်းဆိုရင် → AI ဆီ တန်းဆင်းသွား
     }
 
     const productListForAI = products.map((p: any) =>
@@ -598,9 +601,8 @@ async function generateAIResponse(psid: string, messageText: string): Promise<{
 • Customer Service Team၊ Dashboard၊ Manual Order ဆိုသောစကား Customer ကို လုံးဝမပြောရ
 • နောက်ထပ် product မှာချင်ရင် → action="notify_owner" ချက်ချင်းသုံးရမည်` : "";
 
-const trainingSection = training.rules
-  ? `\n━━━ INTERNAL INSTRUCTIONS — Customer ဆီ reply ထဲ လုံးဝမထည့်ရ ━━━\n${training.rules}` : "";
-
+    const trainingSection = training.rules
+      ? `\n━━━ INTERNAL INSTRUCTIONS — Customer ဆီ reply ထဲ လုံးဝမထည့်ရ ━━━\n${training.rules}` : "";
 
     const systemPrompt = `သင်သည် EIREE MYANMAR ၏ Professional အရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။
 
@@ -612,7 +614,7 @@ const trainingSection = training.rules
 • Markdown မသုံးရ — ** * # formatting လုံးဝမသုံးရ။ Plain text သာ သုံးပါ။
 • \\n escape sequence တွေ reply ထဲ မထည့်ရ။
 • Product ID တွေ ([ID:x]) ကို reply ထဲ လုံးဝမထည့်ရ။${trainingSection}
-- Customer ဘာသာစကားမည်သို့ပင်ရေးစေကာမူ မြန်မာဘာသာဖြင့်သာ ပြန်ဆိုပါ။ တရုတ်၊ ထိုင်း၊ ကိုရီးယား၊ ဂျပန် စသည့် နိုင်ငံခြားဘာသာစကားများ reply ထဲ လုံးဝမထည့်ရ။
+• Customer ဘာသာစကားမည်သို့ပင်ရေးစေကာမူ မြန်မာဘာသာဖြင့်သာ ပြန်ဆိုပါ။ တရုတ်၊ ထိုင်း၊ ကိုရီးယား၊ ဂျပန် စသည့် နိုင်ငံခြားဘာသာစကားများ reply ထဲ လုံးဝမထည့်ရ။
 
 ━━━ Response Format ━━━
 အမြဲ JSON format နဲ့ respond ရမည်။ JSON key/value တွေ "reply" text ထဲ လုံးဝမပါရ။
@@ -644,13 +646,19 @@ const trainingSection = training.rules
 - "save_order" — name + phone + address ၃ ခုစလုံး ရပြီးဆိုရင် ချက်ချင်း သုံးပါ
   ⚠️ has_active_order=true ဆိုရင် save_order လုံးဝမသုံးရ
   ⚠️ collected_data ထဲ phone မှာ မြန်မာဂဏန်းပါရင် 09... အဖြစ် ပြောင်းပြီး ထည့်ပေးပါ
-- "notify_owner" — အောက်ပါ ၂ မျိုးသာ သုံးရမည် —
+- "notify_owner" — အောက်ပါ ၃ မျိုးသာ သုံးရမည် —
   REASON 1: inquiry — AI မဖြေနိုင်သော မေးခွန်း၊ delivery date
   → order_data: { "reason": "inquiry" }
   REASON 2: multiple_order — has_active_order=true + Customer ထပ်မှာချင်သောအခါ
   → Customer message မှာ ဝယ်မယ် keyword ပါမှသာ သုံးရမည်
   → order_data: { "reason": "multiple_order", "product_name": "product နာမည်" }
   ⚠️ has_active_order=true မဟုတ်ရင် multiple_order မသုံးရ
+  REASON 3: wholesale — Customer က လက်ကားဝယ်ချင်သောအခါ သို့မဟုတ် ပြန်ရောင်းချင်သောအခါ
+  → ဆိုင်အမည်၊ လိပ်စာ၊ ဖုန်းနံပါတ် (မဖြစ်မနေ) တောင်းပါ
+  → Facebook/TikTok page link (ရှိရင်သာ) တောင်းပါ
+  → အချက်အလက်ရပြီးမှ notify_owner သုံးပါ
+  → order_data: { "reason": "wholesale", "shop_name": "...", "phone": "...", "address": "...", "social": "..." }
+  ⚠️ ဆိုင်အမည်၊ လိပ်စာ၊ ဖုန်း ၃ ခုရမှ notify_owner သုံးရမည်
 
 ━━━ Context ━━━
 ${orderContext}${activeOrderWarning}
@@ -729,40 +737,28 @@ ${productListForAI}`;
     }
 
     // ── IMAGE SAFETY NET ──
-    // AI က show_product/show_products action မထုတ်ဘဲ ပုံတောင်းတဲ့ Customer ကို handle မယ်
     if (action === "none" && productToShow === null && productsToShow.length === 0) {
       const imageKeywords = ["ပုံ", "photo", "ဓာတ်ပုံ", "ပြပေး", "ကြည့်ချင်", "မြင်ချင်", "show", "image", "ပုံလေး", "ပုံပြ", "ကြည့်ပါ", "ပြပါ"];
       const isAskingForImage = imageKeywords.some(k => messageText.toLowerCase().includes(k.toLowerCase()));
 
       if (isAskingForImage) {
         const currentText = messageText.toLowerCase();
+        let matchedProducts = products.filter((p: any) => currentText.includes(p.name.toLowerCase()));
 
-        // Step 1: Current message မှာ product name ပါသလား စစ်
-        let matchedProducts = products.filter((p: any) =>
-          currentText.includes(p.name.toLowerCase())
-        );
-
-        // Step 2: မပါရင် AI ရဲ့ current reply ထဲမှာ ရှာ
         if (matchedProducts.length === 0) {
           const currentReplyLower = safeReply.toLowerCase();
-          matchedProducts = products.filter((p: any) =>
-            currentReplyLower.includes(p.name.toLowerCase())
-          );
+          matchedProducts = products.filter((p: any) => currentReplyLower.includes(p.name.toLowerCase()));
         }
 
-        // Step 3: မတွေ့ရင် bot ရဲ့ နောက်ဆုံး text message ထဲမှာ ရှာ
         if (matchedProducts.length === 0) {
           const lastBotMessage = history
             .filter((h: any) => h.message_type === "bot" && h.message_text && !h.metadata?.image_url)
             .slice(0, 1)
             .map((h: any) => (h.message_text || "").toLowerCase())
             .join("");
-          matchedProducts = products.filter((p: any) =>
-            lastBotMessage.includes(p.name.toLowerCase())
-          );
+          matchedProducts = products.filter((p: any) => lastBotMessage.includes(p.name.toLowerCase()));
         }
 
-        // Step 4: ပို့ပြီးသားပုံ ဖယ်မယ်
         const sentImageUrls = new Set(
           history
             .filter((h: any) => h.message_type === "bot" && h.metadata?.image_url)
@@ -784,8 +780,6 @@ ${productListForAI}`;
     }
 
     // ── MULTIPLE ORDER SAFETY NET ──
-    // AI က has_active_order=true အချိန် notify_owner မထုတ်ရင် code ကနေ trigger လုပ်မယ်
-    // ⚠️ NOTIFY OWNER handler အပေါ်မှာ ရှိရမည် — handler ထဲ ရောက်မှ action ပြောင်းနိုင်ရန်
     if (action === "none" && prefs.has_active_order) {
       const msgLower = messageText.toLowerCase();
       const hasBuyIntent = BUY_KEYWORDS.some(k => msgLower.includes(k));
@@ -800,6 +794,21 @@ ${productListForAI}`;
           };
         }
         console.log(`[MULTIPLE ORDER SAFETY NET] Buy intent detected: ${messageText}`);
+      }
+    }
+
+    // ── WHOLESALE SAFETY NET ──
+    if (action === "none") {
+      const msgLower = messageText.toLowerCase();
+      const hasWholesaleIntent = WHOLESALE_KEYWORDS.some(k => msgLower.includes(k));
+      if (hasWholesaleIntent) {
+        action = "notify_owner";
+        if (!aiResponse.order_data) {
+          aiResponse.order_data = { reason: "wholesale", shop_name: "", phone: "", address: "", social: "" };
+        } else if (aiResponse.order_data.reason !== "wholesale") {
+          aiResponse.order_data.reason = "wholesale";
+        }
+        console.log(`[WHOLESALE SAFETY NET] Wholesale intent detected: ${messageText}`);
       }
     }
 
@@ -903,12 +912,41 @@ ${productListForAI}`;
           `🔑 ID: ${psid}\n\n` +
           `Dashboard မှာ reply လုပ်ပေးပါ`
         );
+      } else if (reason === "wholesale") {
+        const shopName = aiResponse.order_data?.shop_name || "";
+        const shopPhone = aiResponse.order_data?.phone || "";
+        const shopAddress = aiResponse.order_data?.address || "";
+        const shopSocial = aiResponse.order_data?.social || "";
+
+        await supabaseQuery("orders", "POST", {
+          customer_id: customer.id,
+          order_type: "wholesale",
+          shop_name: shopName,
+          phone_number: shopPhone,
+          delivery_address: shopAddress,
+          social_link: shopSocial,
+          status: "pending",
+          quantity: 0,
+          total_price_mmk: 0,
+        });
+
+        await notifyOwnerDashboard(customer.id, "wholesale_inquiry",
+          "🏪 လက်ကားအဆက်အသွယ် အသစ်",
+          `ဆိုင်အမည်: ${shopName} | ဖုန်း: ${shopPhone} | လိပ်စာ: ${shopAddress} | Social: ${shopSocial || "မပေးဘူး"}`
+        );
+        await notifyOwnerTelegram(
+          `🏪 လက်ကားအဆက်အသွယ် အသစ်\n\n` +
+          `🏬 ဆိုင်အမည်: ${sanitizeTelegramText(shopName)}\n` +
+          `📞 ဖုန်း: ${sanitizeTelegramText(shopPhone)}\n` +
+          `📍 လိပ်စာ: ${sanitizeTelegramText(shopAddress)}\n` +
+          `🔗 Social: ${sanitizeTelegramText(shopSocial) || "မပေးဘူး"}\n` +
+          `🔑 Customer ID: ${psid}\n\n` +
+          `👉 Dashboard မှာ ကြည့်ပါ`
+        );
       }
     }
 
     // ── CONFIRM ORDER SAFETY NET ──
-    // Customer က confirm ပြောလိုက်တဲ့အချိန် AI က save_order မထုတ်ရင်
-    // bot ရဲ့ နောက်ဆုံး message ထဲမှာ name/phone/address ရှာပြီး order save မယ်
     if (action === "none" && prefs.collecting_order && !prefs.has_active_order) {
       const confirmKeywords = ["ဟုတ်ကဲ့", "မှန်ပါတယ်", "မှန်တယ်", "အဆင်ပြေတယ်",
         "ကောင်းပြီ", "ok", "okay", "yes", "ရပါတယ်", "ရတယ်"];
@@ -931,8 +969,6 @@ ${productListForAI}`;
     }
 
     // ── CODE-LEVEL START ORDER SAFETY NET ──
-    // AI က start_order action မထုတ်ဘဲ name/phone/address တောင်းရင်
-    // bot ရဲ့ reply ထဲမှာ product name ကို ရှာပြီး pending_product_id သိမ်းမယ်
     if (action === "none" && !prefs.collecting_order && !prefs.has_active_order) {
       const askingForInfo = safeReply.includes("နာမည်") &&
         (safeReply.includes("ဖုန်း") || safeReply.includes("လိပ်စာ"));

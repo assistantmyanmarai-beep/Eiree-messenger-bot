@@ -924,32 +924,51 @@ ${productListForAI}`;
         const shopPhone = aiResponse.order_data?.phone || "";
         const shopAddress = aiResponse.order_data?.address || "";
         const shopSocial = aiResponse.order_data?.social || "";
-
-        await supabaseQuery("orders", "POST", {
-          customer_id: customer.id,
-          order_type: "wholesale",
-          shop_name: shopName,
-          phone_number: shopPhone,
-          delivery_address: shopAddress,
-          social_link: shopSocial,
-          status: "pending",
-          quantity: 0,
-          total_price_mmk: 0,
-        });
-
-        await notifyOwnerDashboard(customer.id, "wholesale_inquiry",
-          "🏪 လက်ကားအဆက်အသွယ် အသစ်",
-          `ဆိုင်အမည်: ${shopName} | ဖုန်း: ${shopPhone} | လိပ်စာ: ${shopAddress} | Social: ${shopSocial || "မပေးဘူး"}`
+      
+        // Existing wholesale order ရှိလား စစ်
+        const existingWholesale = await supabaseQuery(
+          "orders", "GET", null,
+          `customer_id=eq.${customer.id}&order_type=eq.wholesale&status=eq.pending&order=created_at.desc&limit=1&select=id,social_link`
         );
-        await notifyOwnerTelegram(
-          `🏪 လက်ကားအဆက်အသွယ် အသစ်\n\n` +
-          `🏬 ဆိုင်အမည်: ${sanitizeTelegramText(shopName)}\n` +
-          `📞 ဖုန်း: ${sanitizeTelegramText(shopPhone)}\n` +
-          `📍 လိပ်စာ: ${sanitizeTelegramText(shopAddress)}\n` +
-          `🔗 Social: ${sanitizeTelegramText(shopSocial) || "မပေးဘူး"}\n` +
-          `🔑 Customer ID: ${psid}\n\n` +
-          `👉 Dashboard မှာ ကြည့်ပါ`
-        );
+      
+        if (existingWholesale && existingWholesale.length > 0) {
+          // ရှိပြီးသား → social_link UPDATE သာ လုပ်၊ Telegram မပို့
+          const existingId = existingWholesale[0].id;
+          if (shopSocial) {
+            await supabaseQuery("orders", "PATCH",
+              { social_link: shopSocial },
+              `id=eq.${existingId}`
+            );
+            console.log(`[WHOLESALE] Updated social_link for order ${existingId}`);
+          }
+        } else {
+          // မရှိသေးဘူး → INSERT အသစ် + Telegram ပို့
+          await supabaseQuery("orders", "POST", {
+            customer_id: customer.id,
+            order_type: "wholesale",
+            shop_name: shopName,
+            phone_number: shopPhone,
+            delivery_address: shopAddress,
+            social_link: shopSocial,
+            status: "pending",
+            quantity: 0,
+            total_price_mmk: 0,
+          });
+      
+          await notifyOwnerDashboard(customer.id, "wholesale_inquiry",
+            "🏪 လက်ကားအဆက်အသွယ် အသစ်",
+            `ဆိုင်အမည်: ${shopName} | ဖုန်း: ${shopPhone} | လိပ်စာ: ${shopAddress} | Social: ${shopSocial || "မပေးဘူး"}`
+          );
+          await notifyOwnerTelegram(
+            `🏪 လက်ကားအဆက်အသွယ် အသစ်\n\n` +
+            `🏬 ဆိုင်အမည်: ${sanitizeTelegramText(shopName)}\n` +
+            `📞 ဖုန်း: ${sanitizeTelegramText(shopPhone)}\n` +
+            `📍 လိပ်စာ: ${sanitizeTelegramText(shopAddress)}\n` +
+            `🔗 Social: ${sanitizeTelegramText(shopSocial) || "မပေးဘူး"}\n` +
+            `🔑 Customer ID: ${psid}\n\n` +
+            `👉 Dashboard မှာ ကြည့်ပါ`
+          );
+        }
       }
     }
 

@@ -797,21 +797,28 @@ ${productListForAI}`;
       }
     }
 
-    // ── WHOLESALE SAFETY NET ──
-    if (action === "none") {
-      const msgLower = messageText.toLowerCase();
-      const hasWholesaleIntent = WHOLESALE_KEYWORDS.some(k => msgLower.includes(k));
-      if (hasWholesaleIntent && aiResponse.action !== "notify_owner") {
-        action = "notify_owner";
-        if (!aiResponse.order_data) {
-          aiResponse.order_data = { reason: "wholesale", shop_name: "", phone: "", address: "", social: "" };
-        } else if (aiResponse.order_data.reason !== "wholesale") {
-          aiResponse.order_data.reason = "wholesale";
-        }
-        console.log(`[WHOLESALE SAFETY NET] Wholesale intent detected: ${messageText}`);
-      }
-    }
+   // ── WHOLESALE SAFETY NET ──
+   if (action === "none") {
+    const msgLower = messageText.toLowerCase();
+    const hasWholesaleIntent = WHOLESALE_KEYWORDS.some(k => msgLower.includes(k));
+    const hasPhone = normalizeMyanmarNumbers(messageText).replace(/\s+/g, "").match(/09\d{7,9}/);
+    const isCollectingWholesale = (prefs as any).collecting_wholesale || false;
 
+    if (hasWholesaleIntent && !isCollectingWholesale) {
+      // Wholesale intent တွေ့တယ် — context mark လုပ်မယ်၊ notify မလုပ်သေးဘူး
+      await updateContext(customer.id, {
+        preferences: { ...prefs, collecting_wholesale: true },
+      });
+      console.log(`[WHOLESALE SAFETY NET] Marking collecting_wholesale: ${messageText}`);
+    } else if (isCollectingWholesale && hasPhone && aiResponse.action !== "notify_owner") {
+      // Phone ပါလာပြီ — trigger မယ်
+      action = "notify_owner";
+      if (!aiResponse.order_data || aiResponse.order_data.reason !== "wholesale") {
+        aiResponse.order_data = { reason: "wholesale", shop_name: "", phone: "", address: "", social: "" };
+      }
+      console.log(`[WHOLESALE SAFETY NET] Phone received, triggering: ${messageText}`);
+    }
+  }
     // ── START ORDER ──
     if (action === "start_order" && aiResponse.order_data) {
       const orderProductName = (aiResponse.order_data.product_name || "").toLowerCase();

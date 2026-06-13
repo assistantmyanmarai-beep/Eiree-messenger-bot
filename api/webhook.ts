@@ -817,7 +817,22 @@ ${productListForAI}`;
         aiResponse.order_data = { reason: "wholesale", shop_name: "", phone: "", address: "", social: "" };
       }
       console.log(`[WHOLESALE SAFETY NET] Phone received, triggering: ${messageText}`);
+    
+  } else if (isCollectingWholesale) {
+    // Phone မပါဘဲ URL ပါလာရင် — social link update
+    const urlMatch = messageText.match(/https?:\/\/\S+/)?.[0];
+    if (urlMatch) {
+      const existingWholesale = await supabaseQuery(
+        "orders", "GET", null,
+        `customer_id=eq.${customer.id}&order_type=eq.wholesale&status=eq.pending&order=created_at.desc&limit=1&select=id,social_link`
+      );
+      if (existingWholesale && existingWholesale.length > 0) {
+        const existingId = existingWholesale[0].id;
+        await supabaseQuery("orders", "PATCH", { social_link: urlMatch }, `id=eq.${existingId}`);
+        console.log(`[WHOLESALE SOCIAL SAFETY NET] Updated social_link for order ${existingId}`);
+      }
     }
+  }
   }
     // ── START ORDER ──
     if (action === "start_order" && aiResponse.order_data) {

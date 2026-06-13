@@ -840,7 +840,7 @@ ${productListForAI}`;
     }
       }
     }
-    
+
     // ── START ORDER ──
     if (action === "start_order" && aiResponse.order_data) {
       const orderProductName = (aiResponse.order_data.product_name || "").toLowerCase();
@@ -957,13 +957,20 @@ const shopSocial = aiResponse.order_data?.social || socialFromMessage;
         if (existingWholesale && existingWholesale.length > 0) {
           // ရှိပြီးသား → social_link UPDATE သာ လုပ်၊ Telegram မပို့
           const existingId = existingWholesale[0].id;
-          if (shopSocial) {
-            await supabaseQuery("orders", "PATCH",
-              { social_link: shopSocial },
-              `id=eq.${existingId}`
-            );
-            console.log(`[WHOLESALE] Updated social_link for order ${existingId}`);
-          }
+          const urlMatches = messageText.match(/https?:\/\/\S+/g) || [];
+if (urlMatches.length > 0) {
+  const existingSocial = existingWholesale[0].social_link || "";
+  const existingLinks = existingSocial.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean);
+  const newLinks = urlMatches.filter((u: string) => !existingLinks.includes(u));
+  if (newLinks.length > 0) {
+    const combined = [...existingLinks, ...newLinks].join("\n");
+    await supabaseQuery("orders", "PATCH",
+      { social_link: combined },
+      `id=eq.${existingId}`
+    );
+    console.log(`[WHOLESALE] Updated social_link for order ${existingId}: ${combined}`);
+  }
+}
         } else if (shopPhone) {
           // မရှိသေးဘူး → INSERT အသစ် + Telegram ပို့
           await supabaseQuery("orders", "POST", {

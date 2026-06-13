@@ -923,7 +923,8 @@ ${productListForAI}`;
         const shopName = aiResponse.order_data?.shop_name || "";
         const shopPhone = aiResponse.order_data?.phone || "";
         const shopAddress = aiResponse.order_data?.address || "";
-        const shopSocial = aiResponse.order_data?.social || "";
+        const socialFromMessage = messageText.match(/https?:\/\/\S+/)?.[0] || "";
+const shopSocial = aiResponse.order_data?.social || socialFromMessage;
       
         // Existing wholesale order ရှိလား စစ်
         const existingWholesale = await supabaseQuery(

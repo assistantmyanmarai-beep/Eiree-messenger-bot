@@ -820,20 +820,27 @@ ${productListForAI}`;
     
   } else if (isCollectingWholesale) {
     // Phone မပါဘဲ URL ပါလာရင် — social link update
-    const urlMatch = messageText.match(/https?:\/\/\S+/)?.[0];
-    if (urlMatch) {
+    const urlMatches = messageText.match(/https?:\/\/\S+/g) || [];
+    if (urlMatches.length > 0) {
       const existingWholesale = await supabaseQuery(
         "orders", "GET", null,
         `customer_id=eq.${customer.id}&order_type=eq.wholesale&status=eq.pending&order=created_at.desc&limit=1&select=id,social_link`
       );
       if (existingWholesale && existingWholesale.length > 0) {
         const existingId = existingWholesale[0].id;
-        await supabaseQuery("orders", "PATCH", { social_link: urlMatch }, `id=eq.${existingId}`);
-        console.log(`[WHOLESALE SOCIAL SAFETY NET] Updated social_link for order ${existingId}`);
+        const existingSocial = existingWholesale[0].social_link || "";
+        const existingLinks = existingSocial.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean);
+        const newLinks = urlMatches.filter((u: string) => !existingLinks.includes(u));
+        if (newLinks.length > 0) {
+          const combined = [...existingLinks, ...newLinks].join("\n");
+          await supabaseQuery("orders", "PATCH", { social_link: combined }, `id=eq.${existingId}`);
+          console.log(`[WHOLESALE SOCIAL SAFETY NET] Updated social_link for order ${existingId}: ${combined}`);
+        }
       }
     }
-  }
-  }
+      }
+    }
+    
     // ── START ORDER ──
     if (action === "start_order" && aiResponse.order_data) {
       const orderProductName = (aiResponse.order_data.product_name || "").toLowerCase();

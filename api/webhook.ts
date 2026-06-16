@@ -689,13 +689,17 @@ ${productListForAI}`;
           ...historyMessages,
           { role: "user", content: messageText },
         ],
-        max_tokens: 2000,
+        max_tokens: 800,
         temperature: 0.7,
         stream: false,
+        provider: {
+          order: ["Google AI Studio"],
+          allow_fallbacks: true,
+        },
       },
       {
         headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-        timeout: 25000,
+        timeout: 15000,
       }
     );
 

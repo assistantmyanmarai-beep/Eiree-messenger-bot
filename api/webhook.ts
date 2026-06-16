@@ -58,6 +58,8 @@ function sanitizeTelegramText(text: string): string {
 function sanitizeReply(text: string): string {
   if (!text) return "";
   let cleaned = text
+    .replace(/^\s*"reply":\s*"/i, "")
+    .replace(/"?\s*$/, "")
     .replace(/\\n/g, "\n")
     .replace(/\\t/g, " ")
     .replace(/^\s*\{[\s\S]*\}\s*$/gm, "")
@@ -687,7 +689,7 @@ ${productListForAI}`;
           ...historyMessages,
           { role: "user", content: messageText },
         ],
-        max_tokens: 1200,
+        max_tokens: 2000,
         temperature: 0.7,
       },
       {

@@ -687,12 +687,12 @@ ${productListForAI}`;
           ...historyMessages,
           { role: "user", content: messageText },
         ],
-        max_tokens: 800,
+        max_tokens: 1200,
         temperature: 0.7,
       },
       {
         headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-        timeout: 15000,
+        timeout: 25000,
       }
     );
 
@@ -717,6 +717,7 @@ ${productListForAI}`;
       }
     } catch {
       aiResponse.reply = sanitizeReply(rawContent);
+      await notifySystemError(`AI Parse Failed. Raw (500): ${rawContent.slice(0, 500)}`);
     }
 
     const safeReply = sanitizeReply(aiResponse.reply || fallback);
